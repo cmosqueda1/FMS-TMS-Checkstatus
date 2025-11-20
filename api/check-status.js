@@ -5,6 +5,30 @@
 const cleanPro = (v) => String(v ?? "").trim();
 
 /**
+ * Simple concurrency limiter for async work.
+ * Runs at most `limit` workers in parallel while preserving result order.
+ */
+async function runWithConcurrency(items, limit, worker) {
+  const results = new Array(items.length);
+  let index = 0;
+
+  async function next() {
+    const current = index++;
+    if (current >= items.length) return;
+    results[current] = await worker(items[current], current);
+    await next();
+  }
+
+  const runners = [];
+  const max = Math.min(limit, items.length);
+  for (let i = 0; i < max; i++) {
+    runners.push(next());
+  }
+  await Promise.all(runners);
+  return results;
+}
+
+/**
  * Vercel handler
  */
 export default async function handler(req, res) {
@@ -69,7 +93,7 @@ async function checkAll(pros) {
     throw new Error("Missing FMS_USER / FMS_PASS in environment");
   }
 
-  // 1) FMS: auth + search + DO mapping
+  // 1) FMS: auth + search + DO mapping (single batched search)
   const fmsToken   = await authFms();
   const searchJson = await fmsSearchOrders(fmsToken, pros);
   const fmsMap     = buildFmsMap(searchJson);
@@ -84,10 +108,10 @@ async function checkAll(pros) {
     console.error("TMS flow failed:", e?.message || e);
   }
 
-  // 3) Build combined result list
-  const results = [];
+  // 3) Build combined result list with limited concurrency
+  const CONCURRENCY = 5; // tweak if needed
 
-  for (const pro of pros) {
+  const results = await runWithConcurrency(pros, CONCURRENCY, async (pro) => {
     const DO = fmsMap[pro];
 
     // ---- FMS result ----
@@ -145,8 +169,8 @@ async function checkAll(pros) {
       }
     }
 
-    results.push({ pro, fms: fmsRes, tms: tmsRes });
-  }
+    return { pro, fms: fmsRes, tms: tmsRes };
+  });
 
   return results;
 }
