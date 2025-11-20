@@ -117,7 +117,7 @@
 
     <div class="row" style="margin-top:10px">
       <button class="btn btn-primary" id="run">Check Status</button>
-      <button class="btn btn-ghost" id="export">Export Results (.txt)</button>
+      <button class="btn btn-ghost" id="export">Export Results (.csv)</button>
     </div>
 
     <div id="loadingSpinner">
@@ -148,10 +148,12 @@
   let timerStart = 0;
   let timerInterval = null;
 
+  // 🔹 Stores CSV rows
+  let csvRows = [];
+
   function showSpinner(){ $("loadingSpinner").style.display = "block"; }
   function hideSpinner(){ $("loadingSpinner").style.display = "none"; }
 
-  /* ⏱ Stopwatch */
   function startTimer(){
     timerStart = Date.now();
     $("elapsed").textContent = "Elapsed 0.00s";
@@ -178,6 +180,7 @@
     stopTimer();
     fill.style.width = "0%";
     status.textContent = "Idle";
+    csvRows = []; // reset CSV rows
   }
 
   function setProg(done, total){
@@ -212,37 +215,41 @@
 
       const data = await resp.json();
       const results = data.results || [];
-
       out.textContent = "";
 
       for(let i=0;i<results.length;i++){
         const r = results[i];
         const pro = r.pro;
-
-        // ORIGINAL OUTPUT FORMAT
         const f = r.fms || {};
         const t = r.tms || {};
 
-        let fLine = "";
-        if(!f.hasDO){
-          fLine = `FMS: ${pro} -> no FMS record found for this PRO`;
-        } else {
-          fLine = `FMS: ${pro} -> ${f.DO} | Loc: ${f.loc || "—"} | Status: ${f.status || "—"} | Substatus: ${f.substatus || "—"}`;
-        }
+        // ORIGINAL DISPLAY FORMAT
+        let fLine = (!f.hasDO)
+          ? `FMS: ${pro} -> no FMS record found for this PRO`
+          : `FMS: ${pro} -> ${f.DO} | Loc: ${f.loc || "—"} | Status: ${f.status || "—"} | Substatus: ${f.substatus || "—"}`;
 
-        let tLine = "";
-        if(!t.attempted){
-          tLine = `TMS: ${pro} -> ERROR retrieving TMS info.`;
-        } else if(t.notFound){
-          tLine = `TMS: ${pro} -> no TMS record found for this PRO`;
-        } else {
-          tLine = `TMS: ${pro} -> Order ID: ${t.orderId || "—"} | Loc/SVCS: ${t.loc || "—"} | Status: ${t.status || "—"} | Substatus: ${t.substatus || "—"}`;
-        }
+        let tLine = (!t.attempted)
+          ? `TMS: ${pro} -> ERROR retrieving TMS info.`
+          : (!t.notFound)
+            ? `TMS: ${pro} -> Order ID: ${t.orderId || "—"} | Loc/SVCS: ${t.loc || "—"} | Status: ${t.status || "—"} | Substatus: ${t.substatus || "—"}`
+            : `TMS: ${pro} -> no TMS record found for this PRO`;
 
         line(fLine);
         line(tLine);
-
         if(i < results.length - 1) line("---");
+
+        // PUSH STRUCTURED CSV DATA
+        csvRows.push({
+          Pro: pro,
+          DO: f.DO || "",
+          FMS_Loc: f.loc || "",
+          FMS_Status: f.status || "",
+          FMS_SubStatus: f.substatus || "",
+          Order_ID: t.orderId || "",
+          TMS_Loc_SVCS: t.loc || "",
+          TMS_Status: t.status || "",
+          TMS_Substatus: t.substatus || ""
+        });
 
         setProg(i+1, results.length);
       }
@@ -260,7 +267,35 @@
     out.textContent += (out.textContent ? "\n" : "") + msg;
   }
 
-  /* 🔄 Click Handler */
+  // 🔽 EXPORT TO CSV
+  expBtn.addEventListener("click", () => {
+    if (!csvRows.length){
+      alert("No data to export.");
+      return;
+    }
+
+    const headers = [
+      "Pro","DO","FMS_Loc","FMS_Status","FMS_SubStatus",
+      "Order_ID","TMS_Loc-SVCS","TMS_Status","TMS_Substatus"
+    ];
+
+    const lines = [
+      headers.join(","),
+      ...csvRows.map(r => [
+        r.Pro, r.DO, r.FMS_Loc, r.FMS_Status, r.FMS_SubStatus,
+        r.Order_ID, r.TMS_Loc_SVCS, r.TMS_Status, r.TMS_Substatus
+      ].map(v => `"${v}"`).join(","))
+    ];
+
+    const blob = new Blob([lines.join("\n")], {type: "text/csv;charset=utf-8"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `pro_status_${new Date().toISOString().replace(/[:.]/g,"-")}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  });
+
   runBtn.addEventListener("click", async () => {
     resetOutput();
     showSpinner();
