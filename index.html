@@ -93,41 +93,32 @@
   </div>
 
   <div class="sub">
-    Paste one or more PROs (any separators), then click <strong>Check Status</strong> to compare.
+    Paste one or more PROs, then click Check Status to compare.
   </div>
 
   <div class="card">
 
-    <!-- INPUT AREA -->
     <label for="input">Tracking Numbers</label>
-    <textarea id="input" placeholder="18560935
-3178258, 3178259
-278057 3192386"></textarea>
+    <textarea id="input"></textarea>
 
     <div class="row" style="justify-content:space-between;margin-top:6px">
       <div class="muted" id="proMeta">0 PROs detected</div>
       <div class="muted" id="status">Idle</div>
     </div>
 
-    <div class="row" style="justify-content:space-between;margin-top:2px">
-      <div class="muted" id="eta">ETA —</div>
-      <div class="muted" id="counts">0/0</div>
-    </div>
-
-    <!-- NEW STOPWATCH DISPLAY -->
+    <!-- REMOVE ETA ROW COMPLETELY -->
+    
     <div class="row" style="justify-content:flex-start;margin-top:2px">
       <div class="muted" id="elapsed">Elapsed —</div>
     </div>
 
     <div class="bar"><div class="fill" id="fill"></div></div>
 
-    <!-- BUTTONS -->
     <div class="row" style="margin-top:10px">
       <button class="btn btn-primary" id="run">Check Status</button>
       <button class="btn btn-ghost" id="export">Export Results (.txt)</button>
     </div>
 
-    <!-- Animated Spinner -->
     <div id="loadingSpinner">
       <div class="spinner"></div>
       <div style="margin-top:8px;font-size:12px;color:var(--muted)">Checking status...</div>
@@ -135,14 +126,8 @@
 
   </div>
 
-  <!-- OUTPUT CARD -->
   <div class="card" style="margin-top:16px">
-    <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:6px">
-      <strong>Output</strong>
-      <span class="muted">
-        Example: <code>FMS: PRO -> DO | Status: ...</code>
-      </span>
-    </div>
+    <strong>Output</strong>
     <pre id="out"></pre>
   </div>
 </div>
@@ -154,23 +139,16 @@
   const runBtn  = $("run");
   const expBtn  = $("export");
   const out     = $("out");
-  const proMeta = $("proMeta");
-  const status  = $("status");
-  const eta     = $("eta");
-  const fill    = $("fill");
-  const counts  = $("counts");
 
   const MAX_PROS = 150;
 
-  /* TIMER VARS */
   let timerStart = 0;
   let timerInterval = null;
 
-  /* 🔄 Spinner Controls */
   function showSpinner(){ $("loadingSpinner").style.display = "block"; }
   function hideSpinner(){ $("loadingSpinner").style.display = "none"; }
 
-  /* ⏱ Stopwatch Controls */
+  /* ⏱ Stopwatch */
   function startTimer() {
     timerStart = Date.now();
     $("elapsed").textContent = "Elapsed 0.00s";
@@ -183,81 +161,45 @@
 
   function stopTimer() {
     if (timerInterval) clearInterval(timerInterval);
+    const final = ((Date.now() - timerStart) / 1000).toFixed(2);
+    $("elapsed").textContent = `Elapsed ${final}s`;
   }
 
   const parsePros = t => (String(t).match(/\b\d{6,14}\b/g) || []);
-  const now = () => Date.now();
-
-  function setProg(done,total,startTs){
-    const frac = total ? done/total : 0;
-    fill.style.width = (frac*100).toFixed(0) + "%";
-    counts.textContent = `${done}/${total}`;
-    if (!total){ 
-      eta.textContent = "ETA —"; 
-      return; 
-    }
-  }
-
-  function line(msg){ out.textContent += (out.textContent ? "\n" : "") + msg; }
 
   function resetOutput(){
     out.textContent = "";
-    status.textContent = "Idle";
-    eta.textContent = "ETA —";
     $("elapsed").textContent = "Elapsed —";
     stopTimer();
-    setProg(0,0,now());
+    document.getElementById("fill").style.width = "0%";
   }
 
   input.addEventListener("input", () => {
-    const pros = parsePros(input.value);
-    proMeta.textContent = `${pros.length} PRO${pros.length===1?"":"s"} detected`;
+    const count = parsePros(input.value).length;
+    $("proMeta").textContent = `${count} PRO${count===1?"":"s"} detected`;
   });
 
   async function checkStatus(){
-    resetOutput();
-
-    const allPros = parsePros(input.value);
-    if (!allPros.length){
-      line("[Error] No PROs found.");
+    const pros = parsePros(input.value);
+    if (!pros.length){
+      out.textContent = "[Error] No PROs found.";
       return;
     }
 
-    const pros = allPros.slice(0,MAX_PROS);
-    const start = now();
-
-    status.textContent = "Calling backend…";
-    setProg(0, pros.length, start);
-
-    try{
-      const resp = await fetch("/api/check-status",{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({ pros })
-      });
-
-      const data = await resp.json();
-      const results = data.results || [];
-
-      for (let i=0;i<results.length;i++){
-        const r = results[i];
-        line(`FMS: ${r.pro} -> ...`);
-        line(`TMS: ${r.pro} -> ...`);
-
-        if (i < results.length - 1) line("---");
-        setProg(i+1, pros.length, start);
-      }
-
-      status.textContent = "Check complete";
-
-    }catch(err){
-      status.textContent = "Error";
-      line("ERROR retrieving order info.");
+    for (let i=0;i<pros.length;i++){
+      line(`FMS: ${pros[i]} -> ...`);
+      line(`TMS: ${pros[i]} -> ...`);
+      if (i < pros.length - 1) line("---");
     }
   }
 
-  /* ⏳ Wrap Call With Spinner + Timer */
+  function line(msg){
+    out.textContent += (out.textContent ? "\n" : "") + msg;
+  }
+
+  /* ⏳ Wrap with timer + spinner */
   runBtn.addEventListener("click", async () => {
+    resetOutput();
     showSpinner();
     startTimer();
 
