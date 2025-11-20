@@ -77,9 +77,9 @@
     animation: spin .85s linear infinite;
     margin:0 auto;
   }
-  @keyframes spin {
-    to { transform: rotate(360deg); }
-  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
 </style>
 </head>
 
@@ -93,21 +93,22 @@
   </div>
 
   <div class="sub">
-    Paste one or more PROs, then click Check Status to compare.
+    Paste one or more PROs (any separators), then click <strong>Check Status</strong> to compare.
   </div>
 
   <div class="card">
 
     <label for="input">Tracking Numbers</label>
-    <textarea id="input"></textarea>
+    <textarea id="input" placeholder="18560935
+3178258, 3178259
+278057 3192386"></textarea>
 
     <div class="row" style="justify-content:space-between;margin-top:6px">
       <div class="muted" id="proMeta">0 PROs detected</div>
       <div class="muted" id="status">Idle</div>
     </div>
 
-    <!-- REMOVE ETA ROW COMPLETELY -->
-    
+    <!-- Stopwatch -->
     <div class="row" style="justify-content:flex-start;margin-top:2px">
       <div class="muted" id="elapsed">Elapsed —</div>
     </div>
@@ -134,12 +135,14 @@
 
 <script>
 (() => {
-  const $       = id => document.getElementById(id);
+
+  const $ = id => document.getElementById(id);
   const input   = $("input");
   const runBtn  = $("run");
   const expBtn  = $("export");
   const out     = $("out");
-
+  const status  = $("status");
+  const fill    = $("fill");
   const MAX_PROS = 150;
 
   let timerStart = 0;
@@ -149,7 +152,7 @@
   function hideSpinner(){ $("loadingSpinner").style.display = "none"; }
 
   /* ⏱ Stopwatch */
-  function startTimer() {
+  function startTimer(){
     timerStart = Date.now();
     $("elapsed").textContent = "Elapsed 0.00s";
 
@@ -159,24 +162,32 @@
     }, 100);
   }
 
-  function stopTimer() {
+  function stopTimer(){
     if (timerInterval) clearInterval(timerInterval);
-    const final = ((Date.now() - timerStart) / 1000).toFixed(2);
+    const final = ((Date.now() - timerStart)/1000).toFixed(2);
     $("elapsed").textContent = `Elapsed ${final}s`;
   }
 
-  const parsePros = t => (String(t).match(/\b\d{6,14}\b/g) || []);
+  function parsePros(t){
+    return (String(t).match(/\b\d{6,14}\b/g) || []);
+  }
 
   function resetOutput(){
     out.textContent = "";
     $("elapsed").textContent = "Elapsed —";
     stopTimer();
-    document.getElementById("fill").style.width = "0%";
+    fill.style.width = "0%";
+    status.textContent = "Idle";
+  }
+
+  function setProg(done, total){
+    if(!total) return;
+    fill.style.width = ((done/total)*100).toFixed(0) + "%";
   }
 
   input.addEventListener("input", () => {
-    const count = parsePros(input.value).length;
-    $("proMeta").textContent = `${count} PRO${count===1?"":"s"} detected`;
+    const pros = parsePros(input.value);
+    $("proMeta").textContent = `${pros.length} PRO${pros.length===1?"":"s"} detected`;
   });
 
   async function checkStatus(){
@@ -186,10 +197,62 @@
       return;
     }
 
-    for (let i=0;i<pros.length;i++){
-      line(`FMS: ${pros[i]} -> ...`);
-      line(`TMS: ${pros[i]} -> ...`);
-      if (i < pros.length - 1) line("---");
+    status.textContent = "Calling backend…";
+
+    try{
+      const resp = await fetch("/api/check-status", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({ pros })
+      });
+
+      if(!resp.ok){
+        throw new Error("Backend HTTP " + resp.status);
+      }
+
+      const data = await resp.json();
+      const results = data.results || [];
+
+      out.textContent = "";
+
+      for(let i=0;i<results.length;i++){
+        const r = results[i];
+        const pro = r.pro;
+
+        // ORIGINAL OUTPUT FORMAT
+        const f = r.fms || {};
+        const t = r.tms || {};
+
+        let fLine = "";
+        if(!f.hasDO){
+          fLine = `FMS: ${pro} -> no FMS record found for this PRO`;
+        } else {
+          fLine = `FMS: ${pro} -> ${f.DO} | Loc: ${f.loc || "—"} | Status: ${f.status || "—"} | Substatus: ${f.substatus || "—"}`;
+        }
+
+        let tLine = "";
+        if(!t.attempted){
+          tLine = `TMS: ${pro} -> ERROR retrieving TMS info.`;
+        } else if(t.notFound){
+          tLine = `TMS: ${pro} -> no TMS record found for this PRO`;
+        } else {
+          tLine = `TMS: ${pro} -> Order ID: ${t.orderId || "—"} | Loc/SVCS: ${t.loc || "—"} | Status: ${t.status || "—"} | Substatus: ${t.substatus || "—"}`;
+        }
+
+        line(fLine);
+        line(tLine);
+
+        if(i < results.length - 1) line("---");
+
+        setProg(i+1, results.length);
+      }
+
+      status.textContent = "Check complete";
+
+    } catch(err){
+      console.error(err);
+      status.textContent = "Error";
+      line("ERROR retrieving order info.");
     }
   }
 
@@ -197,7 +260,7 @@
     out.textContent += (out.textContent ? "\n" : "") + msg;
   }
 
-  /* ⏳ Wrap with timer + spinner */
+  /* 🔄 Click Handler */
   runBtn.addEventListener("click", async () => {
     resetOutput();
     showSpinner();
