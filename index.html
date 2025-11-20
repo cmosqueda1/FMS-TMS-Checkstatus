@@ -198,7 +198,7 @@
     status.textContent = "Calling backend…";
 
     try{
-      const resp = await fetch("/api/check-status", {
+      const resp = await fetch("/api/check-status-pro", {
         method:"POST",
         headers:{"Content-Type":"application/json"},
         body:JSON.stringify({ pros })
