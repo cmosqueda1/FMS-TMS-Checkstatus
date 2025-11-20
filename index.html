@@ -26,7 +26,6 @@
     box-shadow:0 10px 30px rgba(0,0,0,.35)
   }
   .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
-  label{font-size:12px;color:var(--muted);display:block;margin-bottom:6px}
   textarea{
     width:100%;min-height:200px;background:#0b0f19;border:1px solid var(--border);
     color:var(--text);border-radius:14px;padding:12px 14px;font-size:14px;
@@ -40,7 +39,7 @@
   .btn-ghost{background:transparent;border-color:var(--border);color:var(--text)}
   .btn:disabled{opacity:.6;cursor:not-allowed}
 
-  /* Mode toggle buttons */
+  /* Mode Buttons */
   .mode-btn {
     padding:10px 18px;
     border:1px solid var(--border);
@@ -56,21 +55,6 @@
     color:#060913;
     border-color:transparent;
     font-weight:700;
-  }
-
-  .bar{
-    height:12px;border-radius:999px;background:#0b0f19;
-    border:1px solid var(--border);overflow:hidden;margin-top:8px
-  }
-  .fill{
-    height:100%;width:0;
-    background:linear-gradient(90deg,var(--ok),var(--accent2));transition:width .2s ease
-  }
-  .muted{color:var(--muted);font-size:12px}
-  pre{
-    white-space:pre-wrap;word-break:break-word;background:#0b0f19;
-    border:1px solid var(--border);border-radius:14px;padding:12px;
-    font-size:13px;max-height:420px;overflow:auto
   }
 
   /* Spinner */
@@ -91,46 +75,41 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
+  .bar{height:12px;border-radius:999px;background:#0b0f19;
+    border:1px solid var(--border);overflow:hidden;margin-top:8px}
+  .fill{height:100%;width:0;
+    background:linear-gradient(90deg,var(--ok),var(--accent2));transition:width .2s ease}
+
+  pre{
+    white-space:pre-wrap;word-break:break-word;background:#0b0f19;
+    border:1px solid var(--border);border-radius:14px;padding:12px;
+    font-size:13px;max-height:420px;overflow:auto
+  }
 </style>
 </head>
 
 <body>
 <div class="wrap">
-  <div class="hdr">
-    <div class="brand">
-      <span class="dot"></span>
-      <h1 style="margin:0">Pro Status Check: FMS vs TMS</h1>
-    </div>
-  </div>
-
-  <div class="sub">
-    Paste PROs or PUs then click <strong>Check Status</strong>.
-  </div>
+  <h1>Pro Status Check: FMS vs TMS</h1>
 
   <div class="card">
 
-    <!-- 🔥 MODE SWITCH BUTTONS -->
+    <!-- MODE SWITCH -->
     <div class="row" style="margin-bottom:10px; gap:6px;">
       <button id="modePro" class="mode-btn active">Search Pro</button>
       <button id="modePU" class="mode-btn">Search PU</button>
     </div>
 
-    <label for="input">Input</label>
     <textarea id="input" placeholder="18560935
 3178258, 3178259
 278057 3192386"></textarea>
 
-    <!-- Status row -->
     <div class="row" style="justify-content:space-between;margin-top:6px">
       <div class="muted" id="proMeta">0 entries detected</div>
       <div class="muted" id="status">Idle</div>
     </div>
 
-    <!-- Stopwatch -->
-    <div class="row" style="justify-content:flex-start;margin-top:2px">
-      <div class="muted" id="elapsed">Elapsed —</div>
-    </div>
-
+    <div class="muted" id="elapsed" style="margin-top:2px;">Elapsed —</div>
     <div class="bar"><div class="fill" id="fill"></div></div>
 
     <div class="row" style="margin-top:10px">
@@ -138,6 +117,7 @@
       <button class="btn btn-ghost" id="export">Export Results (.csv)</button>
     </div>
 
+    <!-- SPINNER -->
     <div id="loadingSpinner">
       <div class="spinner"></div>
       <div style="margin-top:8px;font-size:12px;color:var(--muted)">Checking status...</div>
@@ -151,66 +131,28 @@
   </div>
 </div>
 
-<script>
-// =============================
-// SCRIPT LOADER FOR MODE TOGGLE
-// =============================
-let currentMode = "pro";
-
-function loadLogicScript(file){
-  const existing = document.getElementById("logicScript");
-  if(existing) existing.remove();
-
-  const s = document.createElement("script");
-  s.src = file;
-  s.id = "logicScript";
-  document.body.appendChild(s);
-}
-
-// Load default mode
-loadLogicScript("check-status-pro.js");
-
-// =============================
-// MODE BUTTON LOGIC
-// =============================
-
-const modePro = document.getElementById("modePro");
-const modePU = document.getElementById("modePU");
-
-modePro.addEventListener("click", () => {
-  if(currentMode !== "pro"){
-    currentMode = "pro";
-    modePro.classList.add("active");
-    modePU.classList.remove("active");
-    loadLogicScript("check-status-pro.js");
-  }
-});
-
-modePU.addEventListener("click", () => {
-  if(currentMode !== "pu"){
-    currentMode = "pu";
-    modePU.classList.add("active");
-    modePro.classList.remove("active");
-    loadLogicScript("check-status-pu.js");
-  }
-});
-</script>
 
 <script>
-// =============================
-// UNIVERSAL UI + EXPORT LOGIC
-// =============================
+// ==========================
+// UI + Shared Logic
+// ==========================
+
 const $ = id => document.getElementById(id);
+let currentMode = "pro";
 const input   = $("input");
 const runBtn  = $("run");
 const expBtn  = $("export");
 const out     = $("out");
-const status  = $("status");
 const fill    = $("fill");
+const status  = $("status");
 
 let timerStart = 0;
 let timerInterval = null;
 let csvRows = [];
+
+function parseInput(text){
+  return (String(text).match(/\b\d{4,14}\b/g) || []);
+}
 
 function showSpinner(){ $("loadingSpinner").style.display = "block"; }
 function hideSpinner(){ $("loadingSpinner").style.display = "none"; }
@@ -233,15 +175,10 @@ function stopTimer(){
 
 function resetOutput(){
   out.textContent = "";
-  $("elapsed").textContent = "Elapsed —";
-  stopTimer();
   fill.style.width = "0%";
+  $("elapsed").textContent = "Elapsed —";
   status.textContent = "Idle";
   csvRows = [];
-}
-
-function parseInput(text){
-  return (String(text).match(/\b\d{4,14}\b/g) || []);
 }
 
 input.addEventListener("input", () => {
@@ -258,19 +195,121 @@ function line(msg){
   out.textContent += (out.textContent ? "\n" : "") + msg;
 }
 
-// =============================
-// CSV EXPORT (Filename + "-")
-// =============================
 
-expBtn.addEventListener("click", () => {
-  if (!csvRows.length){
-    alert("No data to export.");
+// ==========================
+// MODE BUTTON LOGIC
+// ==========================
+
+const modePro = $("modePro");
+const modePU = $("modePU");
+
+modePro.addEventListener("click", () => {
+  if(currentMode !== "pro"){
+    currentMode = "pro";
+    modePro.classList.add("active");
+    modePU.classList.remove("active");
+  }
+});
+
+modePU.addEventListener("click", () => {
+  if(currentMode !== "pu"){
+    currentMode = "pu";
+    modePU.classList.add("active");
+    modePro.classList.remove("active");
+  }
+});
+
+
+// ==========================
+// RUN LOOKUP (Frontend)
+// ==========================
+
+async function runLookup(inputText){
+  const values = parseInput(inputText);
+  if(!values.length){
+    line("[Error] No input values found.");
     return;
   }
 
+  const endpoint = (currentMode === "pu")
+    ? "/api/check-status-pu"
+    : "/api/check-status";
+
+  const body = (currentMode === "pu")
+    ? { pu_nos: values }
+    : { pros: values };
+
+  status.textContent = "Calling backend…";
+
+  const resp = await fetch(endpoint, {
+    method: "POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify(body)
+  });
+
+  if(!resp.ok){
+    line("ERROR contacting backend");
+    status.textContent = "Error";
+    return;
+  }
+
+  const data = await resp.json();
+  const results = data.results || [];
+
+  results.forEach((r, i) => {
+    const id = (currentMode === "pu") ? r.pu : r.pro;
+
+    // FMS Line
+    let f = r.fms || {};
+    let fLine = `FMS: ${id} -> ` +
+      ((f.DO || "-") + " | Loc: " + (f.loc || "-") + " | Status: " + (f.status || "-") + " | Substatus: " + (f.substatus || "-"));
+    line(fLine);
+
+    // TMS Line
+    let t = r.tms || {};
+    let tLine = `TMS: ${id} -> Order ID: ${t.orderId || "-"} | Loc/SVCS: ${t.loc || "-"} | Status: ${t.status || "-"} | Substatus: ${t.substatus || "-"}`;
+    line(tLine);
+
+    // CSV row storage
+    csvRows.push({
+      ID: id,
+      DO: f.DO || "-",
+      FMS_Loc: f.loc || "-",
+      FMS_Status: f.status || "-",
+      FMS_SubStatus: f.substatus || "-",
+      Order_ID: t.orderId || "-",
+      TMS_Loc_SVCS: t.loc || "-",
+      TMS_Status: t.status || "-",
+      TMS_Substatus: t.substatus || "-"
+    });
+
+    if(i < results.length - 1) line("---");
+    setProg(i+1, results.length);
+  });
+
+  status.textContent = "Complete";
+  expBtn.disabled = !csvRows.length;
+}
+
+
+// ==========================
+// EXPORT CSV
+// ==========================
+
+expBtn.addEventListener("click", () => {
+  const headerName = (currentMode === "pu") ? "PU" : "Pro";
+
   const headers = [
-    "Pro","DO","FMS_Loc","FMS_Status","FMS_SubStatus",
+    headerName,"DO","FMS_Loc","FMS_Status","FMS_SubStatus",
     "Order_ID","TMS_Loc-SVCS","TMS_Status","TMS_Substatus"
+  ];
+
+  const lines = [
+    headers.join(","),
+    ...csvRows.map(r => [
+      r.ID, r.DO, r.FMS_Loc, r.FMS_Status, r.FMS_SubStatus,
+      r.Order_ID, r.TMS_Loc_SVCS, r.TMS_Status, r.TMS_Substatus
+    ].join(","))
   ];
 
   const now = new Date();
@@ -279,43 +318,25 @@ expBtn.addEventListener("click", () => {
     `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}` +
     `T${pad(now.getHours())}-${pad(now.getMinutes())}`;
 
-  const filename = `pro-status-check_${timestamp}.csv`;
-
-  const lines = [
-    headers.join(","),
-    ...csvRows.map(r => [
-      r.Pro || "-",
-      r.DO || "-",
-      r.FMS_Loc || "-",
-      r.FMS_Status || "-",
-      r.FMS_SubStatus || "-",
-      r.Order_ID || "-",
-      r.TMS_Loc_SVCS || "-",
-      r.TMS_Status || "-",
-      r.TMS_Substatus || "-"
-    ].join(","))
-  ];
-
-  const blob = new Blob([lines.join("\n")], {type: "text/csv;charset=utf-8"});
+  const blob = new Blob([lines.join("\n")],{type:"text/csv;charset=utf-8"});
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = filename;
+  a.download = `pro-status-check_${timestamp}.csv`;
   document.body.appendChild(a);
   a.click();
   a.remove();
 });
 
-// =============================
-// RUN BUTTON → CALL LOOKUP()
-// =============================
+
+// ==========================
+// RUN BUTTON
+// ==========================
+
 runBtn.addEventListener("click", async () => {
   resetOutput();
   showSpinner();
   startTimer();
 
-  // This function is defined in whichever script is loaded:
-  // - check-status-pro.js
-  // - check-status-pu.js
   await runLookup(input.value).finally(() => {
     hideSpinner();
     stopTimer();
