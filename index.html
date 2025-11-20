@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Pro Status Check: FMS vs TMS</title>
+<style>
+  :root{
+    --bg:#0a0c10;--card:#0f1420;--text:#e6edf6;--muted:#93a4b7;
+    --accent:#7c3aed;--accent2:#22d3ee;--ok:#10b981;--bad:#ef4444;--border:#1f2a3a
+  }
+  *{box-sizing:border-box}
+  html,body{
+    margin:0;
+    background:radial-gradient(1200px 900px at 10% -10%, #121a2b 0%, transparent 60%), var(--bg);
+    color:var(--text);
+    font-family:Inter,system-ui,Segoe UI,Roboto,Ubuntu,Arial,sans-serif
+  }
+  .wrap{max-width:980px;margin:40px auto;padding:0 16px 64px}
+  h1{margin:0 0 6px;font-size:26px;font-weight:800}
+  .sub{color:var(--muted);margin-bottom:18px}
+  .card{
+    background:linear-gradient(180deg, rgba(255,255,255,.02), transparent), var(--card);
+    border:1px solid var(--border);border-radius:18px;padding:18px;
+    box-shadow:0 10px 30px rgba(0,0,0,.35)
+  }
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  label{font-size:12px;color:var(--muted);display:block;margin-bottom:6px}
+  textarea{
+    width:100%;min-height:200px;background:#0b0f19;border:1px solid var(--border);
+    color:var(--text);border-radius:14px;padding:12px 14px;font-size:14px;
+    line-height:1.4;resize:vertical;outline:none
+  }
+  .btn{
+    cursor:pointer;border:1px solid transparent;border-radius:14px;
+    padding:12px 16px;font-weight:700;font-size:14px
+  }
+  .btn-primary{background:linear-gradient(90deg,var(--accent),var(--accent2));color:#060913}
+  .btn-ghost{background:transparent;border-color:var(--border);color:var(--text)}
+  .btn:disabled{opacity:.6;cursor:not-allowed}
+  .bar{
+    height:12px;border-radius:999px;background:#0b0f19;
+    border:1px solid var(--border);overflow:hidden;margin-top:8px
+  }
+  .fill{
+    height:100%;width:0;
+    background:linear-gradient(90deg,var(--ok),var(--accent2));transition:width .2s ease
+  }
+  .muted{color:var(--muted);font-size:12px}
+  pre{
+    white-space:pre-wrap;word-break:break-word;background:#0b0f19;
+    border:1px solid var(--border);border-radius:14px;padding:12px;
+    font-size:13px;max-height:420px;overflow:auto
+  }
+  .hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+  .brand{display:inline-flex;align-items:center;gap:10px}
+  .brand .dot{
+    width:10px;height:10px;border-radius:50%;
+    background:linear-gradient(90deg,var(--accent),var(--accent2));
+    box-shadow:0 0 18px rgba(124,58,237,.7)
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hdr">
+    <div class="brand">
+      <span class="dot"></span>
+      <h1 style="margin:0">Pro Status Check: FMS vs TMS</h1>
+    </div>
+  </div>
+  <div class="sub">
+    Paste one or more PROs (any separators), then click <strong>Check Status</strong> to compare
+    FMS vs TMS. All FMS/TMS calls are made on the server via /api/check-status.
+  </div>
+
+  <div class="card">
+    <div style="margin-bottom:12px">
+      <label for="input">Tracking Numbers (we extract 6–14 digit PROs)</label>
+      <textarea id="input" placeholder="18560935
+3178258, 3178259
+278057 3192386"></textarea>
+      <div class="row" style="justify-content:space-between;margin-top:6px">
+        <div class="muted" id="proMeta">0 PROs detected</div>
+        <div class="muted" id="status">Idle</div>
+      </div>
+      <div class="row" style="justify-content:space-between;margin-top:2px">
+        <div class="muted" id="eta">ETA —</div>
+        <div class="muted" id="counts">0/0</div>
+      </div>
+      <div class="bar"><div class="fill" id="fill"></div></div>
+    </div>
+
+    <div class="row" style="margin-top:10px">
+      <button class="btn btn-primary" id="run">Check Status</button>
+      <button class="btn btn-ghost" id="export">Export Results (.txt)</button>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:6px">
+      <strong>Output</strong>
+      <span class="muted">
+        Example: <code>FMS: PRO -> DO | Loc: ... | Status: ... | Substatus: ...</code>
+      </span>
+    </div>
+    <pre id="out"></pre>
+  </div>
+</div>
+
+<script>
+(() => {
+  const $       = id => document.getElementById(id);
+  const input   = $("input");
+  const runBtn  = $("run");
+  const expBtn  = $("export");
+  const out     = $("out");
+  const proMeta = $("proMeta");
+  const status  = $("status");
+  const eta     = $("eta");
+  const fill    = $("fill");
+  const counts  = $("counts");
+  const MAX_PROS = 150;
+
+  const parsePros = t => (String(t).match(/\b\d{6,14}\b/g) || []);
+  const now = () => Date.now();
+
+  function setProg(done,total,startTs){
+    const frac = total ? done/total : 0;
+    fill.style.width = (frac*100).toFixed(0) + "%";
+    counts.textContent = `${done}/${total}`;
+    if (!total){ eta.textContent = "ETA —"; return; }
+    const elapsed = (Date.now()-startTs)/1000;
+    const rate = done ? done/elapsed : 0;
+    const rem  = rate ? (total-done)/rate : Infinity;
+    eta.textContent = `ETA ${isFinite(rem) ? fmt(rem) : "—"}`;
+  }
+  function fmt(sec){
+    sec = Math.max(0, Math.floor(sec));
+    const m = Math.floor(sec/60), s = sec%60;
+    return m ? `${m}m ${String(s).padStart(2,"0")}s` : `${s}s`;
+  }
+  function line(msg){
+    out.textContent += (out.textContent ? "\n" : "") + msg;
+  }
+  function resetOutput(){
+    out.textContent = "";
+    setProg(0,0,now());
+    status.textContent = "Idle";
+    eta.textContent = "ETA —";
+  }
+
+  input.addEventListener("input", () => {
+    const pros = parsePros(input.value);
+    proMeta.textContent = `${pros.length} PRO${pros.length===1?"":"s"} detected`;
+  });
+
+  async function checkStatus(){
+    resetOutput();
+
+    const allPros = parsePros(input.value);
+    if (!allPros.length){
+      line("[Error] No PROs found.");
+      return;
+    }
+    const overflow = allPros.length>MAX_PROS ? allPros.slice(MAX_PROS) : [];
+    const pros = allPros.slice(0,MAX_PROS);
+
+    const start = now();
+    setProg(0, pros.length, start);
+    status.textContent = "Calling backend…";
+
+    try{
+      const resp = await fetch("/api/check-status",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({ pros })
+      });
+      if (!resp.ok){
+        throw new Error("Backend HTTP " + resp.status);
+      }
+      const data = await resp.json();
+
+      const results = data.results || [];
+      for (let i=0;i<results.length;i++){
+        const r = results[i];
+        const pro = r.pro;
+
+        // FMS line
+        const f = r.fms || {};
+        let fLine = "";
+        if (!f.hasDO){
+          fLine = `FMS: ${pro} -> (no DO found)`;
+        }else if (f.networkError){
+          fLine = `FMS: ${pro} -> ${f.DO} | Network error - please check connection`;
+        }else if (f.generalError || !f.ok){
+          fLine = `FMS: ${pro} -> ${f.DO} | ERROR retrieving order info. Please try again or contact christopher.mosqueda@item.com for assistance`;
+        }else{
+          const loc = f.loc || "—";
+          const st  = f.status || "—";
+          const sub = f.substatus || "—";
+          let suffix = `Loc: ${loc} | Status: ${st} | Substatus: ${sub}`;
+          if (f.partial){
+            suffix += " | ERROR retrieving additional status info. Please try again or contact christopher.mosqueda@item.com for assistance";
+          }
+          fLine = `FMS: ${pro} -> ${f.DO} | ${suffix}`;
+        }
+        line(fLine);
+
+        // TMS line
+        const t = r.tms || {};
+        let tLine = "";
+        if (!t.attempted){
+          tLine = `TMS: ${pro} -> ERROR retrieving TMS info. Please try again or contact christopher.mosqueda@item.com for assistance`;
+        }else if (t.networkError){
+          tLine = `TMS: ${pro} -> Network error - please check connection`;
+        }else if (t.notFound){
+          tLine = `TMS: ${pro} -> no TMS record found for this PRO`;
+        }else if (t.generalError || !t.ok){
+          tLine = `TMS: ${pro} -> ERROR retrieving TMS info. Please try again or contact christopher.mosqueda@item.com for assistance`;
+        }else{
+          const orderId = t.orderId || "—";
+          const loc = t.loc || "—";
+          const st  = t.status || "—";
+          const sub = t.substatus || "—";
+          tLine = `TMS: ${pro} -> Order ID: ${orderId} | Loc/SVCS: ${loc} | Status: ${st} | Substatus: ${sub}`;
+        }
+        line(tLine);
+
+        if (i < results.length - 1){
+          line("---");
+        }
+        setProg(i+1, pros.length, start);
+      }
+
+      if (overflow.length){
+        line(`NOT CHECKED (over ${MAX_PROS} cap):`);
+        overflow.forEach(p => line(`  ${p}`));
+      }
+
+      status.textContent = "Check complete";
+      expBtn.disabled = !out.textContent.trim();
+    }catch(e){
+      console.error(e);
+      status.textContent = "Error";
+      line("ERROR retrieving order info. Please try again or contact christopher.mosqueda@item.com for assistance");
+    }
+  }
+
+  runBtn.addEventListener("click", () => { checkStatus(); });
+
+  expBtn.addEventListener("click", () => {
+    const blob = new Blob([out.textContent], {type:"text/plain;charset=utf-8"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `pro_status_fms_vs_tms_${new Date().toISOString().replace(/[:.]/g,"-")}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 800);
+  });
+
+  // boot
+  (function(){
+    const pros = parsePros(input.value);
+    proMeta.textContent = `${pros.length} PRO${pros.length===1?"":"s"} detected`;
+  })();
+})();
+</script>
+</body>
+</html>
