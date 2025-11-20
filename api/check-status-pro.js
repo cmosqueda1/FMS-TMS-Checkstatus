@@ -54,7 +54,7 @@ export default async function handler(req, res) {
     const results = await checkAll(trimmedPros);
     res.status(200).json({ results });
   } catch (err) {
-    console.error("check-status handler error:", err);
+    console.error("check-status-pro handler error:", err);
     res.status(500).json({ error: "Internal error running status check" });
   }
 }
