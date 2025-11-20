@@ -1,20 +1,29 @@
 // api/check-status.js
-// Node 18/20 serverless function for Vercel (ESM, type: module)
+// Vercel Node serverless function for comparing FMS vs TMS status
 
+// Helper: normalize PROs for strict-but-trimmed matching
+const cleanPro = (v) => String(v ?? "").trim();
+
+/**
+ * Vercel handler
+ */
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     res.status(405).json({ error: "Method not allowed" });
     return;
   }
 
-  const { pros } = req.body || {};
+  const body = req.body || {};
+  const { pros } = body;
+
   if (!Array.isArray(pros) || pros.length === 0) {
     res.status(400).json({ error: "pros must be a non-empty array" });
     return;
   }
 
+  // Unique, trimmed PROs, cap at 150
   const MAX_PROS = 150;
-  const uniquePros = [...new Set(pros.map(p => String(p).trim()).filter(Boolean))];
+  const uniquePros = [...new Set(pros.map(p => cleanPro(p)).filter(Boolean))];
   const trimmedPros = uniquePros.slice(0, MAX_PROS);
 
   try {
@@ -27,11 +36,11 @@ export default async function handler(req, res) {
 }
 
 /* ========================
-   CONFIG (env-driven)
+   CONFIG
 ======================== */
-const FMS_BASE       = process.env.FMS_BASE_URL || "https://fms.item.com";
+const FMS_BASE       = process.env.FMS_BASE_URL   || "https://fms.item.com";
 const FMS_COMPANY_ID = process.env.FMS_COMPANY_ID || "SBFH";
-const FMS_CLIENT     = process.env.FMS_CLIENT || "FMS_WEB";
+const FMS_CLIENT     = process.env.FMS_CLIENT     || "FMS_WEB";
 const FMS_USER       = process.env.FMS_USER;
 const FMS_PASS       = process.env.FMS_PASS;
 
@@ -44,8 +53,10 @@ const TMS_BASE      = process.env.TMS_BASE_URL || "https://tms.freightapp.com";
 const TMS_LOGIN_URL = `${TMS_BASE}/write/check_login.php`;
 const TMS_GROUP_URL = `${TMS_BASE}/write_new/write_change_user_group.php`;
 const TMS_TRACE_URL = `${TMS_BASE}/write_new/get_tms_trace.php`;
-const TMS_USER      = process.env.TMS_USER;
-const TMS_PASS      = process.env.TMS_PASS; // base64 string as in UI
+
+// Defaults to your known credentials if env not set
+const TMS_USER      = process.env.TMS_USER || "cmosqueda";
+const TMS_PASS      = process.env.TMS_PASS || "UWF2NjUyODk="; // base64 string as used by UI
 const TMS_GROUP_ID  = process.env.TMS_GROUP_ID || "28";
 
 let FMS_TOKEN = null;
@@ -54,27 +65,32 @@ let FMS_TOKEN = null;
    MAIN ORCHESTRATION
 ======================== */
 async function checkAll(pros) {
-  if (!FMS_USER || !FMS_PASS || !TMS_USER || !TMS_PASS) {
-    throw new Error("Missing required FMS/TMS credentials in environment variables");
+  if (!FMS_USER || !FMS_PASS) {
+    throw new Error("Missing FMS_USER / FMS_PASS in environment");
   }
 
-  const fmsToken = await authFms();
+  // 1) FMS: auth + search + DO mapping
+  const fmsToken   = await authFms();
   const searchJson = await fmsSearchOrders(fmsToken, pros);
-  const fmsMap = buildFmsMap(searchJson);
+  const fmsMap     = buildFmsMap(searchJson);
 
+  // 2) TMS: auth + change group + trace for all PROs in one request
   let tmsAuth = null;
+  let tmsMap  = null;
   try {
     tmsAuth = await authTms();
+    tmsMap  = await tmsTraceForPros(tmsAuth, pros);
   } catch (e) {
-    console.error("TMS auth failure:", e?.message || e);
+    console.error("TMS flow failed:", e?.message || e);
   }
 
+  // 3) Build combined result list
   const results = [];
 
   for (const pro of pros) {
     const DO = fmsMap[pro];
 
-    /* ---- FMS side ---- */
+    // ---- FMS result ----
     let fmsRes;
     if (!DO) {
       fmsRes = {
@@ -90,11 +106,11 @@ async function checkAll(pros) {
       };
     } else {
       fmsRes = await fetchFmsDetails(fmsToken, DO);
-      fmsRes.DO = DO;
+      fmsRes.DO    = DO;
       fmsRes.hasDO = true;
     }
 
-    /* ---- TMS side ---- */
+    // ---- TMS result ----
     let tmsRes = {
       attempted: false,
       ok: false,
@@ -107,20 +123,18 @@ async function checkAll(pros) {
       generalError: false
     };
 
-    if (tmsAuth && tmsAuth.userId && tmsAuth.token) {
+    if (tmsAuth && tmsMap) {
       tmsRes.attempted = true;
       try {
-        const raw = await tmsTraceForPro(tmsAuth, pro);
-        if (raw.notFound) {
+        const row = tmsMap.get(cleanPro(pro));
+        if (!row) {
           tmsRes.notFound = true;
-        } else if (!raw.ok) {
-          tmsRes.generalError = true;
         } else {
           tmsRes.ok        = true;
-          tmsRes.orderId   = raw.orderId;
-          tmsRes.loc       = raw.loc;
-          tmsRes.status    = raw.status;
-          tmsRes.substatus = raw.substatus;
+          tmsRes.orderId   = row.tms_order_id    ?? null;
+          tmsRes.loc       = row.wa2_code        ?? null;
+          tmsRes.status    = row.tms_order_stage ?? null;
+          tmsRes.substatus = row.tms_order_status ?? null;
         }
       } catch (e) {
         if (e && e.name === "TypeError") {
@@ -187,6 +201,7 @@ async function fmsSearchOrders(token, tracking_nos) {
     headers,
     body: JSON.stringify(body)
   });
+
   if (!r.ok) throw new Error(`FMS search HTTP ${r.status}`);
   return r.json();
 }
@@ -198,7 +213,7 @@ function buildFmsMap(searchJson) {
   else if (Array.isArray(searchJson?.data?.items)) items = searchJson.data.items;
 
   for (const it of items) {
-    const pro   = String(it.tracking_no ?? it.trackingNo ?? "").trim();
+    const pro   = cleanPro(it.tracking_no ?? it.trackingNo ?? "");
     const order = String(it.order_no ?? it.orderNo ?? "").trim();
     if (/^\d{6,14}$/.test(pro) && /^DO\d{6,}$/.test(order)) {
       map[pro] = order;
@@ -219,8 +234,12 @@ async function fetchFmsDetails(token, DO) {
   let basicOk = false, headOk = false;
   let networkError = false, generalError = false;
 
+  // /getshipment-orderbasic
   try {
-    const r = await fetch(FMS_ORDER_BASIC + encodeURIComponent(DO), { method: "GET", headers });
+    const r = await fetch(FMS_ORDER_BASIC + encodeURIComponent(DO), {
+      method: "GET",
+      headers
+    });
     if (!r.ok) throw new Error("bad status");
     const j = await r.json();
     const root = j?.data || j;
@@ -231,8 +250,12 @@ async function fetchFmsDetails(token, DO) {
     else generalError = true;
   }
 
+  // /getshipment-orderbasic-headinfo
   try {
-    const r = await fetch(FMS_ORDER_HEAD + encodeURIComponent(DO), { method: "GET", headers });
+    const r = await fetch(FMS_ORDER_HEAD + encodeURIComponent(DO), {
+      method: "GET",
+      headers
+    });
     if (!r.ok) throw new Error("bad status");
     const j = await r.json();
     const root = j?.data || j;
@@ -300,14 +323,14 @@ async function authTms() {
   if (!r.ok) throw new Error(`TMS auth HTTP ${r.status}`);
   const j = await r.json().catch(() => ({}));
 
-  const uid   = j.UserID    ?? j.user_id    ?? null;
-  const token = j.UserToken ?? j.userToken  ?? null;
+  const uid   = j.UserID    ?? j.user_id   ?? null;
+  const token = j.UserToken ?? j.userToken ?? null;
 
   if (!uid || !token) {
     throw new Error("TMS auth: missing UserID/UserToken");
   }
 
-  // Set group every time for safety
+  // Change group every time for safety
   await tmsChangeGroup(uid, token);
 
   return { userId: uid, token };
@@ -338,16 +361,17 @@ async function tmsChangeGroup(userId, userToken) {
 }
 
 /**
- * Build TMS trace request that matches your HAR payload as closely as possible.
+ * Single TMS trace call for ALL PROs at once,
+ * using the real browser payload structure.
  */
-async function tmsTraceForPro(auth, pro) {
+async function tmsTraceForPros(auth, pros) {
   const { userId, token } = auth;
   const body = new URLSearchParams();
 
-  // Core filters
+  // Match your HAR payload exactly, but with dynamic PRO list & page_size 10000
   body.set("input_filter_tracking_num", "");
   body.set("input_billing_reference", "");
-  body.set("input_filter_pro", String(pro));
+  body.set("input_filter_pro", pros.map(cleanPro).join("\n"));
   body.set("input_filter_trip", "");
   body.set("input_filter_order", "");
   body.set("input_filter_pu", "");
@@ -411,6 +435,7 @@ async function tmsTraceForPro(auth, pro) {
   body.set("input_filter_created_by", "");
   body.set("input_include_cancel", "0");
   body.set("input_carrier_type", "1");
+  body.set("input_approved", "-1");
   body.set("input_fk_revenue_id", "0");
   body.set("input_stage_id", "");
   body.set("input_status_id", "");
@@ -419,13 +444,9 @@ async function tmsTraceForPro(auth, pro) {
   body.set("input_filter_tracking_no", "");
   body.set("input_filter_contriner", "");
   body.set("input_filter_cust_rn", "");
-
-  // paging
   body.set("input_page_num", "1");
-  body.set("input_page_size", "10");
+  body.set("input_page_size", "10000");
   body.set("input_total_rows", "0");
-
-  // auth
   body.set("UserID", String(userId));
   body.set("UserToken", String(token));
   body.set("pageName", "dashboardTmsTrace");
@@ -455,19 +476,17 @@ async function tmsTraceForPro(auth, pro) {
   else if (Array.isArray(j?.result)) rows = j.result;
 
   if (!rows || !rows.length) {
-    return { ok: false, notFound: true };
+    return new Map();
   }
 
-  const proStr = String(pro).trim();
-  const row =
-    rows.find(rw => String(rw.tms_order_pro ?? "").trim() === proStr) || rows[0];
+  // Build a map from cleaned PRO -> row
+  const map = new Map();
+  for (const rw of rows) {
+    const key = cleanPro(rw.tms_order_pro);
+    if (key) {
+      map.set(key, rw);
+    }
+  }
 
-  return {
-    ok: true,
-    notFound: false,
-    orderId:   row.tms_order_id    ?? null,
-    loc:       row.wa2_code        ?? null,
-    status:    row.tms_order_stage ?? null,
-    substatus: row.tms_order_status ?? null
-  };
+  return map;
 }
