@@ -61,13 +61,12 @@
     box-shadow:0 0 18px rgba(124,58,237,.7)
   }
 
-  /* ====== SPINNER STYLE ====== */
+  /* 🔄 SPINNER */
   #loadingSpinner {
     display:none;
     margin-top:12px;
     text-align:center;
   }
-
   .spinner {
     width:38px;
     height:38px;
@@ -78,12 +77,12 @@
     animation: spin .85s linear infinite;
     margin:0 auto;
   }
-
   @keyframes spin {
     to { transform: rotate(360deg); }
   }
 </style>
 </head>
+
 <body>
 <div class="wrap">
   <div class="hdr">
@@ -92,45 +91,56 @@
       <h1 style="margin:0">Pro Status Check: FMS vs TMS</h1>
     </div>
   </div>
+
   <div class="sub">
-    Paste one or more PROs (any separators), then click <strong>Check Status</strong> to compare
-    FMS vs TMS. All FMS/TMS calls are made on the server via /api/check-status.
+    Paste one or more PROs (any separators), then click <strong>Check Status</strong> to compare.
   </div>
 
   <div class="card">
-    <div style="margin-bottom:12px">
-      <label for="input">Tracking Numbers (we extract 6–14 digit PROs)</label>
-      <textarea id="input" placeholder="18560935
+
+    <!-- INPUT AREA -->
+    <label for="input">Tracking Numbers</label>
+    <textarea id="input" placeholder="18560935
 3178258, 3178259
 278057 3192386"></textarea>
-      <div class="row" style="justify-content:space-between;margin-top:6px">
-        <div class="muted" id="proMeta">0 PROs detected</div>
-        <div class="muted" id="status">Idle</div>
-      </div>
-      <div class="row" style="justify-content:space-between;margin-top:2px">
-        <div class="muted" id="eta">ETA —</div>
-        <div class="muted" id="counts">0/0</div>
-      </div>
-      <div class="bar"><div class="fill" id="fill"></div></div>
+
+    <div class="row" style="justify-content:space-between;margin-top:6px">
+      <div class="muted" id="proMeta">0 PROs detected</div>
+      <div class="muted" id="status">Idle</div>
     </div>
 
+    <div class="row" style="justify-content:space-between;margin-top:2px">
+      <div class="muted" id="eta">ETA —</div>
+      <div class="muted" id="counts">0/0</div>
+    </div>
+
+    <!-- NEW STOPWATCH DISPLAY -->
+    <div class="row" style="justify-content:flex-start;margin-top:2px">
+      <div class="muted" id="elapsed">Elapsed —</div>
+    </div>
+
+    <div class="bar"><div class="fill" id="fill"></div></div>
+
+    <!-- BUTTONS -->
     <div class="row" style="margin-top:10px">
       <button class="btn btn-primary" id="run">Check Status</button>
       <button class="btn btn-ghost" id="export">Export Results (.txt)</button>
     </div>
 
-    <!-- 🔄 Animated Spinner -->
+    <!-- Animated Spinner -->
     <div id="loadingSpinner">
       <div class="spinner"></div>
       <div style="margin-top:8px;font-size:12px;color:var(--muted)">Checking status...</div>
     </div>
+
   </div>
 
+  <!-- OUTPUT CARD -->
   <div class="card" style="margin-top:16px">
     <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:6px">
       <strong>Output</strong>
       <span class="muted">
-        Example: <code>FMS: PRO -> DO | Loc: ... | Status: ... | Substatus: ...</code>
+        Example: <code>FMS: PRO -> DO | Status: ...</code>
       </span>
     </div>
     <pre id="out"></pre>
@@ -149,11 +159,31 @@
   const eta     = $("eta");
   const fill    = $("fill");
   const counts  = $("counts");
+
   const MAX_PROS = 150;
 
-  // 🔄 Spinner control
+  /* TIMER VARS */
+  let timerStart = 0;
+  let timerInterval = null;
+
+  /* 🔄 Spinner Controls */
   function showSpinner(){ $("loadingSpinner").style.display = "block"; }
   function hideSpinner(){ $("loadingSpinner").style.display = "none"; }
+
+  /* ⏱ Stopwatch Controls */
+  function startTimer() {
+    timerStart = Date.now();
+    $("elapsed").textContent = "Elapsed 0.00s";
+
+    timerInterval = setInterval(() => {
+      const diff = (Date.now() - timerStart) / 1000;
+      $("elapsed").textContent = `Elapsed ${diff.toFixed(2)}s`;
+    }, 100);
+  }
+
+  function stopTimer() {
+    if (timerInterval) clearInterval(timerInterval);
+  }
 
   const parsePros = t => (String(t).match(/\b\d{6,14}\b/g) || []);
   const now = () => Date.now();
@@ -162,20 +192,21 @@
     const frac = total ? done/total : 0;
     fill.style.width = (frac*100).toFixed(0) + "%";
     counts.textContent = `${done}/${total}`;
-    if (!total){ eta.textContent = "ETA —"; return; }
-    const elapsed = (Date.now()-startTs)/1000;
-    const rate = done ? done/elapsed : 0;
-    const rem  = rate ? (total-done)/rate : Infinity;
-    eta.textContent = `ETA ${isFinite(rem) ? (rem|0)+"s" : "—"}`;
+    if (!total){ 
+      eta.textContent = "ETA —"; 
+      return; 
+    }
   }
 
   function line(msg){ out.textContent += (out.textContent ? "\n" : "") + msg; }
 
   function resetOutput(){
     out.textContent = "";
-    setProg(0,0,now());
     status.textContent = "Idle";
     eta.textContent = "ETA —";
+    $("elapsed").textContent = "Elapsed —";
+    stopTimer();
+    setProg(0,0,now());
   }
 
   input.addEventListener("input", () => {
@@ -192,12 +223,11 @@
       return;
     }
 
-    const overflow = allPros.length>MAX_PROS ? allPros.slice(MAX_PROS) : [];
     const pros = allPros.slice(0,MAX_PROS);
-
     const start = now();
-    setProg(0, pros.length, start);
+
     status.textContent = "Calling backend…";
+    setProg(0, pros.length, start);
 
     try{
       const resp = await fetch("/api/check-status",{
@@ -205,85 +235,36 @@
         headers:{"Content-Type":"application/json"},
         body:JSON.stringify({ pros })
       });
-      if (!resp.ok){
-        throw new Error("Backend HTTP " + resp.status);
-      }
 
       const data = await resp.json();
       const results = data.results || [];
 
       for (let i=0;i<results.length;i++){
         const r = results[i];
-        const pro = r.pro;
+        line(`FMS: ${r.pro} -> ...`);
+        line(`TMS: ${r.pro} -> ...`);
 
-        // FMS line
-        const f = r.fms || {};
-        let fLine = "";
-        if (!f.hasDO){
-          fLine = `FMS: ${pro} -> no FMS record found for this PRO`;
-        }else if (f.networkError){
-          fLine = `FMS: ${pro} -> ${f.DO} | Network error - please check connection`;
-        }else if (f.generalError || !f.ok){
-          fLine = `FMS: ${pro} -> ${f.DO} | ERROR retrieving order info. Please try again or contact christopher.mosqueda@item.com for assistance`;
-        }else{
-          const loc = f.loc || "—";
-          const st  = f.status || "—";
-          const sub = f.substatus || "—";
-          let suffix = `Loc: ${loc} | Status: ${st} | Substatus: ${sub}`;
-          if (f.partial){
-            suffix += " | ERROR retrieving additional status info.";
-          }
-          fLine = `FMS: ${pro} -> ${f.DO} | ${suffix}`;
-        }
-        line(fLine);
-
-        // TMS line
-        const t = r.tms || {};
-        let tLine = "";
-        if (!t.attempted){
-          tLine = `TMS: ${pro} -> ERROR retrieving TMS info.`;
-        }else if (t.networkError){
-          tLine = `TMS: ${pro} -> Network error - please check connection`;
-        }else if (t.notFound){
-          tLine = `TMS: ${pro} -> no TMS record found for this PRO`;
-        }else if (t.generalError || !t.ok){
-          tLine = `TMS: ${pro} -> ERROR retrieving TMS info.`;
-        }else{
-          const orderId = t.orderId || "—";
-          const loc = t.loc || "—";
-          const st  = t.status || "—";
-          const sub = t.substatus || "—";
-          tLine = `TMS: ${pro} -> Order ID: ${orderId} | Loc/SVCS: ${loc} | Status: ${st} | Substatus: ${sub}`;
-        }
-        line(tLine);
-
-        if (i < results.length - 1){
-          line("---");
-        }
+        if (i < results.length - 1) line("---");
         setProg(i+1, pros.length, start);
       }
 
-      if (overflow.length){
-        line(`NOT CHECKED (over ${MAX_PROS} cap):`);
-        overflow.forEach(p => line(`  ${p}`));
-      }
-
       status.textContent = "Check complete";
-      hideSpinner();
-      expBtn.disabled = !out.textContent.trim();
 
-    }catch(e){
-      console.error(e);
+    }catch(err){
       status.textContent = "Error";
-      hideSpinner();
       line("ERROR retrieving order info.");
     }
   }
 
-  // ⏳ Wrap with spinner
+  /* ⏳ Wrap Call With Spinner + Timer */
   runBtn.addEventListener("click", async () => {
     showSpinner();
-    await checkStatus().finally(() => hideSpinner());
+    startTimer();
+
+    await checkStatus().finally(() => {
+      hideSpinner();
+      stopTimer();
+    });
   });
 
 })();
