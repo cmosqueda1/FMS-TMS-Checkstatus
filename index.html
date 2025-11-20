@@ -190,7 +190,7 @@
         const f = r.fms || {};
         let fLine = "";
         if (!f.hasDO){
-          fLine = `FMS: ${pro} -> (no DO found)`;
+          fLine = `FMS: ${pro} -> (order not found in FMS)`;
         }else if (f.networkError){
           fLine = `FMS: ${pro} -> ${f.DO} | Network error - please check connection`;
         }else if (f.generalError || !f.ok){
