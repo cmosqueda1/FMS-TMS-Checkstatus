@@ -31,6 +31,8 @@
     color:var(--text);border-radius:14px;padding:12px 14px;font-size:14px;
     line-height:1.4;resize:vertical;outline:none
   }
+
+  /* Buttons */
   .btn{
     cursor:pointer;border:1px solid transparent;border-radius:14px;
     padding:12px 16px;font-weight:700;font-size:14px
@@ -39,7 +41,7 @@
   .btn-ghost{background:transparent;border-color:var(--border);color:var(--text)}
   .btn:disabled{opacity:.6;cursor:not-allowed}
 
-  /* Mode Buttons */
+  /* Mode Toggle */
   .mode-btn {
     padding:10px 18px;
     border:1px solid var(--border);
@@ -233,7 +235,7 @@ async function runLookup(inputText){
 
   const endpoint = (currentMode === "pu")
     ? "/api/check-status-pu"
-    : "/api/check-status";
+    : "/api/check-status-pro";   // UPDATED HERE
 
   const body = (currentMode === "pu")
     ? { pu_nos: values }
