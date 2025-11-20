@@ -146,26 +146,38 @@ async function fmsSearchOrdersByPu(token, pu_nos) {
   const headers = {
     "fms-client": FMS_CLIENT,
     "fms-token": token,
-    "Content-Type": "application/json",
-    "Company-Id": FMS_COMPANY_ID
+    "Company-Id": FMS_COMPANY_ID,
+    "Content-Type": "application/json"
   };
 
   const body = {
-    bill_to_accounts: [], bols: [], business_client: "",
-    consignee_state: [], consignee_terminals: [], consignee_zip_codes: [],
-    current_locations: [], customer_references: [], delayed: false,
-    delivery_appointment: [], delivery_date: [], desired_delivery_date: [],
-    exception: false, hold: false, lh_eta_date: [], lh_etd_date: [],
-    lhs: [], master_order_ids: [], order_nos: [], origin_states: [],
-    origin_zip_codes: [], page_number: 1,
-    page_size: Math.min(pu_nos.length, 150),
-    pickup_appointment: [], pickup_complete_date: [], po_nos: [],
-    pu_nos,                         // 🔹 MAIN FILTER
-    record_status: "0", request_pickup_date: [], service_levels: [],
-    service_terminals: [], shipment_types: [], shipper_terminals: [],
-    status: [], sub_status: [],
-    tracking_nos: [],               // 🔹 ensure PRO search is OFF
-    trips: []
+    order_nos: [],
+    tracking_nos: [],
+    customer_references: [],
+    bols: [],
+    bill_to_accounts: [],
+    master_order_ids: [],
+    status: [],
+    sub_status: [],
+    shipment_types: [],
+    service_levels: [],
+    trips: [],
+    shipper_terminals: [],
+    origin_states: [],
+    origin_zip_codes: [],
+    request_pickup_date: [],
+    delivery_appointment: [],
+    delivery_date: [],
+    pickup_complete_date: [],
+    pu_nos,   // 🔹 KEY FIELD
+    po_nos: [],
+    exception: false,
+    delayed: false,
+    hold: false,
+    business_client: "",
+    record_status: "0",
+    page_number: 1,
+    page_size: Math.min(pu_nos.length, 150)
   };
 
   const r = await fetch(FMS_SEARCH_URL, {
