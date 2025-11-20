@@ -39,6 +39,25 @@
   .btn-primary{background:linear-gradient(90deg,var(--accent),var(--accent2));color:#060913}
   .btn-ghost{background:transparent;border-color:var(--border);color:var(--text)}
   .btn:disabled{opacity:.6;cursor:not-allowed}
+
+  /* Mode toggle buttons */
+  .mode-btn {
+    padding:10px 18px;
+    border:1px solid var(--border);
+    background:#0b0f19;
+    color:var(--text);
+    border-radius:10px;
+    font-size:13px;
+    cursor:pointer;
+    transition:0.25s;
+  }
+  .mode-btn.active {
+    background:linear-gradient(90deg,var(--accent),var(--accent2));
+    color:#060913;
+    border-color:transparent;
+    font-weight:700;
+  }
+
   .bar{
     height:12px;border-radius:999px;background:#0b0f19;
     border:1px solid var(--border);overflow:hidden;margin-top:8px
@@ -52,13 +71,6 @@
     white-space:pre-wrap;word-break:break-word;background:#0b0f19;
     border:1px solid var(--border);border-radius:14px;padding:12px;
     font-size:13px;max-height:420px;overflow:auto
-  }
-  .hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
-  .brand{display:inline-flex;align-items:center;gap:10px}
-  .brand .dot{
-    width:10px;height:10px;border-radius:50%;
-    background:linear-gradient(90deg,var(--accent),var(--accent2));
-    box-shadow:0 0 18px rgba(124,58,237,.7)
   }
 
   /* Spinner */
@@ -92,21 +104,29 @@
   </div>
 
   <div class="sub">
-    Paste PROs then click <strong>Check Status</strong> to compare.
+    Paste PROs or PUs then click <strong>Check Status</strong>.
   </div>
 
   <div class="card">
 
-    <label for="input">Tracking Numbers</label>
+    <!-- 🔥 MODE SWITCH BUTTONS -->
+    <div class="row" style="margin-bottom:10px; gap:6px;">
+      <button id="modePro" class="mode-btn active">Search Pro</button>
+      <button id="modePU" class="mode-btn">Search PU</button>
+    </div>
+
+    <label for="input">Input</label>
     <textarea id="input" placeholder="18560935
 3178258, 3178259
 278057 3192386"></textarea>
 
+    <!-- Status row -->
     <div class="row" style="justify-content:space-between;margin-top:6px">
-      <div class="muted" id="proMeta">0 PROs detected</div>
+      <div class="muted" id="proMeta">0 entries detected</div>
       <div class="muted" id="status">Idle</div>
     </div>
 
+    <!-- Stopwatch -->
     <div class="row" style="justify-content:flex-start;margin-top:2px">
       <div class="muted" id="elapsed">Elapsed —</div>
     </div>
@@ -132,185 +152,176 @@
 </div>
 
 <script>
-(() => {
+// =============================
+// SCRIPT LOADER FOR MODE TOGGLE
+// =============================
+let currentMode = "pro";
 
-  const $ = id => document.getElementById(id);
-  const input   = $("input");
-  const runBtn  = $("run");
-  const expBtn  = $("export");
-  const out     = $("out");
-  const status  = $("status");
-  const fill    = $("fill");
+function loadLogicScript(file){
+  const existing = document.getElementById("logicScript");
+  if(existing) existing.remove();
 
-  let timerStart = 0;
-  let timerInterval = null;
-  let csvRows = [];
+  const s = document.createElement("script");
+  s.src = file;
+  s.id = "logicScript";
+  document.body.appendChild(s);
+}
 
-  function showSpinner(){ $("loadingSpinner").style.display = "block"; }
-  function hideSpinner(){ $("loadingSpinner").style.display = "none"; }
+// Load default mode
+loadLogicScript("check-status-pro.js");
 
-  function startTimer(){
-    timerStart = Date.now();
-    $("elapsed").textContent = "Elapsed 0.00s";
+// =============================
+// MODE BUTTON LOGIC
+// =============================
 
-    timerInterval = setInterval(() => {
-      const diff = (Date.now() - timerStart) / 1000;
-      $("elapsed").textContent = `Elapsed ${diff.toFixed(2)}s`;
-    }, 100);
+const modePro = document.getElementById("modePro");
+const modePU = document.getElementById("modePU");
+
+modePro.addEventListener("click", () => {
+  if(currentMode !== "pro"){
+    currentMode = "pro";
+    modePro.classList.add("active");
+    modePU.classList.remove("active");
+    loadLogicScript("check-status-pro.js");
+  }
+});
+
+modePU.addEventListener("click", () => {
+  if(currentMode !== "pu"){
+    currentMode = "pu";
+    modePU.classList.add("active");
+    modePro.classList.remove("active");
+    loadLogicScript("check-status-pu.js");
+  }
+});
+</script>
+
+<script>
+// =============================
+// UNIVERSAL UI + EXPORT LOGIC
+// =============================
+const $ = id => document.getElementById(id);
+const input   = $("input");
+const runBtn  = $("run");
+const expBtn  = $("export");
+const out     = $("out");
+const status  = $("status");
+const fill    = $("fill");
+
+let timerStart = 0;
+let timerInterval = null;
+let csvRows = [];
+
+function showSpinner(){ $("loadingSpinner").style.display = "block"; }
+function hideSpinner(){ $("loadingSpinner").style.display = "none"; }
+
+function startTimer(){
+  timerStart = Date.now();
+  $("elapsed").textContent = "Elapsed 0.00s";
+
+  timerInterval = setInterval(() => {
+    const diff = (Date.now() - timerStart) / 1000;
+    $("elapsed").textContent = `Elapsed ${diff.toFixed(2)}s`;
+  }, 100);
+}
+
+function stopTimer(){
+  if (timerInterval) clearInterval(timerInterval);
+  const final = ((Date.now() - timerStart)/1000).toFixed(2);
+  $("elapsed").textContent = `Elapsed ${final}s`;
+}
+
+function resetOutput(){
+  out.textContent = "";
+  $("elapsed").textContent = "Elapsed —";
+  stopTimer();
+  fill.style.width = "0%";
+  status.textContent = "Idle";
+  csvRows = [];
+}
+
+function parseInput(text){
+  return (String(text).match(/\b\d{4,14}\b/g) || []);
+}
+
+input.addEventListener("input", () => {
+  const vals = parseInput(input.value);
+  $("proMeta").textContent = `${vals.length} entries detected`;
+});
+
+function setProg(done, total){
+  if(!total) return;
+  fill.style.width = ((done/total)*100).toFixed(0) + "%";
+}
+
+function line(msg){
+  out.textContent += (out.textContent ? "\n" : "") + msg;
+}
+
+// =============================
+// CSV EXPORT (Filename + "-")
+// =============================
+
+expBtn.addEventListener("click", () => {
+  if (!csvRows.length){
+    alert("No data to export.");
+    return;
   }
 
-  function stopTimer(){
-    if (timerInterval) clearInterval(timerInterval);
-    const final = ((Date.now() - timerStart)/1000).toFixed(2);
-    $("elapsed").textContent = `Elapsed ${final}s`;
-  }
+  const headers = [
+    "Pro","DO","FMS_Loc","FMS_Status","FMS_SubStatus",
+    "Order_ID","TMS_Loc-SVCS","TMS_Status","TMS_Substatus"
+  ];
 
-  function resetOutput(){
-    out.textContent = "";
-    $("elapsed").textContent = "Elapsed —";
+  const now = new Date();
+  const pad = n => String(n).padStart(2,"0");
+  const timestamp =
+    `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}` +
+    `T${pad(now.getHours())}-${pad(now.getMinutes())}`;
+
+  const filename = `pro-status-check_${timestamp}.csv`;
+
+  const lines = [
+    headers.join(","),
+    ...csvRows.map(r => [
+      r.Pro || "-",
+      r.DO || "-",
+      r.FMS_Loc || "-",
+      r.FMS_Status || "-",
+      r.FMS_SubStatus || "-",
+      r.Order_ID || "-",
+      r.TMS_Loc_SVCS || "-",
+      r.TMS_Status || "-",
+      r.TMS_Substatus || "-"
+    ].join(","))
+  ];
+
+  const blob = new Blob([lines.join("\n")], {type: "text/csv;charset=utf-8"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+});
+
+// =============================
+// RUN BUTTON → CALL LOOKUP()
+// =============================
+runBtn.addEventListener("click", async () => {
+  resetOutput();
+  showSpinner();
+  startTimer();
+
+  // This function is defined in whichever script is loaded:
+  // - check-status-pro.js
+  // - check-status-pu.js
+  await runLookup(input.value).finally(() => {
+    hideSpinner();
     stopTimer();
-    fill.style.width = "0%";
-    status.textContent = "Idle";
-    csvRows = [];
-  }
-
-  function parsePros(t){
-    return (String(t).match(/\b\d{6,14}\b/g) || []);
-  }
-
-  input.addEventListener("input", () => {
-    const pros = parsePros(input.value);
-    $("proMeta").textContent = `${pros.length} PRO${pros.length===1?"":"s"} detected`;
   });
+});
 
-  function setProg(done,total){
-    if(!total) return;
-    fill.style.width = ((done/total)*100).toFixed(0) + "%";
-  }
-
-  async function checkStatus(){
-    const pros = parsePros(input.value);
-    if (!pros.length){
-      out.textContent = "[Error] No PROs found.";
-      return;
-    }
-
-    status.textContent = "Calling backend…";
-
-    try{
-      const resp = await fetch("/api/check-status-pro", {
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({ pros })
-      });
-
-      if(!resp.ok){
-        throw new Error("Backend HTTP " + resp.status);
-      }
-
-      const data = await resp.json();
-      const results = data.results || [];
-
-      out.textContent = "";
-
-      for(let i=0;i<results.length;i++){
-        const r = results[i];
-        const pro = r.pro;
-        const f = r.fms || {};
-        const t = r.tms || {};
-
-        let fLine = (!f.hasDO)
-          ? `FMS: ${pro} -> no FMS record found for this PRO`
-          : `FMS: ${pro} -> ${f.DO} | Loc: ${f.loc || "—"} | Status: ${f.status || "—"} | Substatus: ${f.substatus || "—"}`;
-
-        let tLine = (!t.attempted)
-          ? `TMS: ${pro} -> ERROR retrieving TMS info.`
-          : (!t.notFound)
-            ? `TMS: ${pro} -> Order ID: ${t.orderId || "—"} | Loc/SVCS: ${t.loc || "—"} | Status: ${t.status || "—"} | Substatus: ${t.substatus || "—"}`
-            : `TMS: ${pro} -> no TMS record found for this PRO`;
-
-        line(fLine);
-        line(tLine);
-        if(i < results.length - 1) line("---");
-
-        csvRows.push({
-          Pro: pro || "-",
-          DO: f.DO || "-",
-          FMS_Loc: f.loc || "-",
-          FMS_Status: f.status || "-",
-          FMS_SubStatus: f.substatus || "-",
-          Order_ID: t.orderId || "-",
-          TMS_Loc_SVCS: t.loc || "-",
-          TMS_Status: t.status || "-",
-          TMS_Substatus: t.substatus || "-"
-        });
-
-        setProg(i+1, results.length);
-      }
-
-      status.textContent = "Check complete";
-
-    } catch(err){
-      console.error(err);
-      status.textContent = "Error";
-      line("ERROR retrieving order info.");
-    }
-  }
-
-  function line(msg){
-    out.textContent += (out.textContent ? "\n" : "") + msg;
-  }
-
-  /* === CSV EXPORT WITH NEW FILENAME FORMAT === */
-  expBtn.addEventListener("click", () => {
-    if (!csvRows.length){
-      alert("No data to export.");
-      return;
-    }
-
-    const headers = [
-      "Pro","DO","FMS_Loc","FMS_Status","FMS_SubStatus",
-      "Order_ID","TMS_Loc-SVCS","TMS_Status","TMS_Substatus"
-    ];
-
-    // Local timestamp — YYYY-MM-DDTHH-MM
-    const now = new Date();
-    const pad = n => String(n).padStart(2,"0");
-    const timestamp =
-      `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}` +
-      `T${pad(now.getHours())}-${pad(now.getMinutes())}`;
-
-    const filename = `pro-status-check_${timestamp}.csv`;
-
-    const lines = [
-      headers.join(","),
-      ...csvRows.map(r => [
-        r.Pro, r.DO, r.FMS_Loc, r.FMS_Status, r.FMS_SubStatus,
-        r.Order_ID, r.TMS_Loc_SVCS, r.TMS_Status, r.TMS_Substatus
-      ].join(","))
-    ];
-
-    const blob = new Blob([lines.join("\n")], {type: "text/csv;charset=utf-8"});
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-  });
-
-  runBtn.addEventListener("click", async () => {
-    resetOutput();
-    showSpinner();
-    startTimer();
-
-    await checkStatus().finally(() => {
-      hideSpinner();
-      stopTimer();
-    });
-  });
-
-})();
 </script>
 </body>
 </html>
