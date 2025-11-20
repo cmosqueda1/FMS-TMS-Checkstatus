@@ -4,10 +4,11 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Pro Status Check: FMS vs TMS</title>
+
 <style>
   :root{
     --bg:#0a0c10;--card:#0f1420;--text:#e6edf6;--muted:#93a4b7;
-    --accent:#7c3aed;--accent2:#22d3ee;--ok:#10b981;--bad:#ef4444;--border:#1f2a3a
+    --accent:#7c3aed;--accent2:#22d3ee;--ok:#10b981;--bad:#ef4444;--border:#1f2a3a;
   }
   *{box-sizing:border-box}
   html,body{
@@ -59,6 +60,28 @@
     background:linear-gradient(90deg,var(--accent),var(--accent2));
     box-shadow:0 0 18px rgba(124,58,237,.7)
   }
+
+  /* ====== SPINNER STYLE ====== */
+  #loadingSpinner {
+    display:none;
+    margin-top:12px;
+    text-align:center;
+  }
+
+  .spinner {
+    width:38px;
+    height:38px;
+    border-radius:50%;
+    border:4px solid rgba(255,255,255,0.12);
+    border-top-color: var(--accent2);
+    border-right-color: var(--accent);
+    animation: spin .85s linear infinite;
+    margin:0 auto;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
 </style>
 </head>
 <body>
@@ -95,16 +118,12 @@
       <button class="btn btn-primary" id="run">Check Status</button>
       <button class="btn btn-ghost" id="export">Export Results (.txt)</button>
     </div>
-    <div id="loadingSpinner" style="
-      display:none;
-      margin-top:10px;
-      padding:10px;
-      color:white;
-      font-weight:bold;
-  ">
-      ⏳ Checking status... please wait
-  </div>
 
+    <!-- 🔄 Animated Spinner -->
+    <div id="loadingSpinner">
+      <div class="spinner"></div>
+      <div style="margin-top:8px;font-size:12px;color:var(--muted)">Checking status...</div>
+    </div>
   </div>
 
   <div class="card" style="margin-top:16px">
@@ -132,6 +151,10 @@
   const counts  = $("counts");
   const MAX_PROS = 150;
 
+  // 🔄 Spinner control
+  function showSpinner(){ $("loadingSpinner").style.display = "block"; }
+  function hideSpinner(){ $("loadingSpinner").style.display = "none"; }
+
   const parsePros = t => (String(t).match(/\b\d{6,14}\b/g) || []);
   const now = () => Date.now();
 
@@ -143,16 +166,11 @@
     const elapsed = (Date.now()-startTs)/1000;
     const rate = done ? done/elapsed : 0;
     const rem  = rate ? (total-done)/rate : Infinity;
-    eta.textContent = `ETA ${isFinite(rem) ? fmt(rem) : "—"}`;
+    eta.textContent = `ETA ${isFinite(rem) ? (rem|0)+"s" : "—"}`;
   }
-  function fmt(sec){
-    sec = Math.max(0, Math.floor(sec));
-    const m = Math.floor(sec/60), s = sec%60;
-    return m ? `${m}m ${String(s).padStart(2,"0")}s` : `${s}s`;
-  }
-  function line(msg){
-    out.textContent += (out.textContent ? "\n" : "") + msg;
-  }
+
+  function line(msg){ out.textContent += (out.textContent ? "\n" : "") + msg; }
+
   function resetOutput(){
     out.textContent = "";
     setProg(0,0,now());
@@ -173,6 +191,7 @@
       line("[Error] No PROs found.");
       return;
     }
+
     const overflow = allPros.length>MAX_PROS ? allPros.slice(MAX_PROS) : [];
     const pros = allPros.slice(0,MAX_PROS);
 
@@ -189,9 +208,10 @@
       if (!resp.ok){
         throw new Error("Backend HTTP " + resp.status);
       }
-      const data = await resp.json();
 
+      const data = await resp.json();
       const results = data.results || [];
+
       for (let i=0;i<results.length;i++){
         const r = results[i];
         const pro = r.pro;
@@ -211,7 +231,7 @@
           const sub = f.substatus || "—";
           let suffix = `Loc: ${loc} | Status: ${st} | Substatus: ${sub}`;
           if (f.partial){
-            suffix += " | ERROR retrieving additional status info. Please try again or contact christopher.mosqueda@item.com for assistance";
+            suffix += " | ERROR retrieving additional status info.";
           }
           fLine = `FMS: ${pro} -> ${f.DO} | ${suffix}`;
         }
@@ -221,13 +241,13 @@
         const t = r.tms || {};
         let tLine = "";
         if (!t.attempted){
-          tLine = `TMS: ${pro} -> ERROR retrieving TMS info. Please try again or contact christopher.mosqueda@item.com for assistance`;
+          tLine = `TMS: ${pro} -> ERROR retrieving TMS info.`;
         }else if (t.networkError){
           tLine = `TMS: ${pro} -> Network error - please check connection`;
         }else if (t.notFound){
           tLine = `TMS: ${pro} -> no TMS record found for this PRO`;
         }else if (t.generalError || !t.ok){
-          tLine = `TMS: ${pro} -> ERROR retrieving TMS info. Please try again or contact christopher.mosqueda@item.com for assistance`;
+          tLine = `TMS: ${pro} -> ERROR retrieving TMS info.`;
         }else{
           const orderId = t.orderId || "—";
           const loc = t.loc || "—";
@@ -249,32 +269,23 @@
       }
 
       status.textContent = "Check complete";
+      hideSpinner();
       expBtn.disabled = !out.textContent.trim();
+
     }catch(e){
       console.error(e);
       status.textContent = "Error";
-      line("ERROR retrieving order info. Please try again or contact christopher.mosqueda@item.com for assistance");
+      hideSpinner();
+      line("ERROR retrieving order info.");
     }
   }
 
-  runBtn.addEventListener("click", () => { checkStatus(); });
-
-  expBtn.addEventListener("click", () => {
-    const blob = new Blob([out.textContent], {type:"text/plain;charset=utf-8"});
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `pro_status_fms_vs_tms_${new Date().toISOString().replace(/[:.]/g,"-")}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 800);
+  // ⏳ Wrap with spinner
+  runBtn.addEventListener("click", async () => {
+    showSpinner();
+    await checkStatus().finally(() => hideSpinner());
   });
 
-  // boot
-  (function(){
-    const pros = parsePros(input.value);
-    proMeta.textContent = `${pros.length} PRO${pros.length===1?"":"s"} detected`;
-  })();
 })();
 </script>
 </body>
