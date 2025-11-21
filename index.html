@@ -28,24 +28,46 @@
     box-shadow:0 10px 30px rgba(0,0,0,.35)
   }
 
-  textarea{
-    width:100%;min-height:200px;background:#0b0f19;border:1px solid var(--border);
-    color:var(--text);border-radius:14px;padding:12px 14px;font-size:16px;
-    line-height:1.4;resize:vertical;outline:none;
+  /* ===================== OLD UI BUTTONS / ELEMENTS RESTORED ===================== */
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+
+  .mode-btn {
+    padding:10px 18px;
+    border:1px solid var(--border);
+    background:#0b0f19;
+    color:var(--text);
+    border-radius:10px;
+    font-size:17px;
+    cursor:pointer;
+  }
+  .mode-btn.active {
+    background:linear-gradient(90deg,var(--accent),var(--accent2));
+    color:#060913;
+    border-color:transparent;
+    font-weight:700;
   }
 
   .btn{
     cursor:pointer;border:1px solid transparent;border-radius:14px;
-    padding:12px 16px;font-weight:700;font-size:16px
+    padding:12px 18px;font-weight:700;font-size:17px
   }
   .btn-primary{
     background:linear-gradient(90deg,var(--accent),var(--accent2));
     color:#060913;
   }
+  .btn-ghost{background:transparent;border-color:var(--border);color:var(--text)}
+  .btn:disabled{opacity:.6;cursor:not-allowed}
 
+  .bar{height:12px;border-radius:999px;background:#0b0f19;
+    border:1px solid var(--border);overflow:hidden;margin-top:8px}
+  .fill{height:100%;width:0;
+    background:linear-gradient(90deg,var(--ok),var(--accent2));transition:width .2s ease}
+
+  /* SPINNER */
+  #loadingSpinner { display:none; margin-top:12px; text-align:center; }
   .spinner {
-    width:38px;height:38px;
-    border-radius:50%;border:4px solid rgba(255,255,255,0.12);
+    width:38px;height:38px;border-radius:50%;
+    border:4px solid rgba(255,255,255,0.12);
     border-top-color: var(--accent2);
     border-right-color: var(--accent);
     animation: spin .85s linear infinite;
@@ -53,9 +75,14 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
+  textarea{
+    width:100%;min-height:200px;background:#0b0f19;border:1px solid var(--border);
+    color:var(--text);border-radius:14px;padding:12px 14px;font-size:16px;
+    line-height:1.4;resize:vertical;outline:none;
+  }
+
   pre{
     white-space:pre;
-    word-break:normal;
     font-family:Consolas, "Cascadia Mono", "Fira Code", monospace;
     background:#0b0f19;
     border:1px solid var(--border);border-radius:14px;padding:12px;
@@ -70,13 +97,11 @@
 <body>
 <div class="wrap">
 
-  <!-- Title with 3 spaces -->
   <h1>   Order Status Check: FMS vs TMS</h1>
 
   <div class="card">
 
-    <!-- Mode Selection -->
-    <div style="margin-bottom:10px; display:flex; gap:6px;">
+    <div class="row" style="margin-bottom:10px;">
       <button id="modePro" class="mode-btn active">Search Pro</button>
       <button id="modePU" class="mode-btn">Search PU</button>
     </div>
@@ -85,7 +110,7 @@
 3178258
 3178259"></textarea>
 
-    <div style="display:flex; justify-content:space-between; margin-top:6px">
+    <div class="row" style="justify-content:space-between;margin-top:6px">
       <div id="proMeta" class="muted">0 entries detected</div>
       <div id="status" class="muted">Idle</div>
     </div>
@@ -93,14 +118,14 @@
     <div id="elapsed" class="muted" style="margin-top:2px;">Elapsed —</div>
     <div class="bar"><div class="fill" id="fill"></div></div>
 
-    <div style="margin-top:10px; display:flex; gap:10px;">
+    <div class="row" style="margin-top:10px">
       <button class="btn btn-primary" id="run">Check Status</button>
       <button class="btn btn-ghost" id="export">Export Results (.csv)</button>
     </div>
 
-    <div id="loadingSpinner" style="display:none; text-align:center; margin-top:12px;">
+    <div id="loadingSpinner">
       <div class="spinner"></div>
-      <div style="margin-top:8px;font-size:14px;">Checking status...</div>
+      <div style="margin-top:8px;font-size:14px;color:var(--muted)">Checking status...</div>
     </div>
 
   </div>
@@ -114,198 +139,108 @@
 
 <script>
 const $ = id => document.getElementById(id);
+let currentMode="pro";
+let lastSearchMode=null;
 
-// track last executed query type
-let currentMode = "pro";
-let lastSearchMode = null;
+const input=$("input"), out=$("out"), status=$("status"), expBtn=$("export"), fill=$("fill"), runBtn=$("run");
 
-// UI elements
-const input = $("input");
-const out = $("out");
-const status = $("status");
-const expBtn = $("export");
-const fill = $("fill");
-const runBtn = $("run");
+let timerStart=0, timerInterval=null, csvRows=[];
 
-let timerStart = 0, timerInterval = null, csvRows = [];
+const WIDTH = { pro:9, pu:9, DO:14, loc:12, status:18, sub:35 };
 
-// formatting widths
-const WIDTH = {
-  pro: 9,
-  pu: 9,
-  DO: 14,
-  loc: 12,
-  status: 18,
-  sub: 35
-};
+function padVal(v,w){ v=String(v??"-"); return v.length>w?v.slice(0,w):v+" ".repeat(w-v.length);}
+function parseInput(t){ return (String(t).match(/\b\d{4,14}\b/g)||[]) }
 
-function padVal(val, width){
-  val = String(val ?? "-");
-  if(val.length > width) return val.slice(0,width);
-  return val + " ".repeat(width - val.length);
-}
-
-function parseInput(text){ return (String(text).match(/\b\d{4,14}\b/g) || []); }
+function showSpinner(){ $("loadingSpinner").style.display="block"; }
+function hideSpinner(){ $("loadingSpinner").style.display="none"; }
 
 function resetOutput(){
-  out.textContent="";
-  fill.style.width="0%";
-  $("elapsed").textContent="Elapsed —";
-  status.textContent="Idle";
-  csvRows=[];
+  out.textContent=""; fill.style.width="0%"; $("elapsed").textContent="Elapsed —"; status.textContent="Idle"; csvRows=[];
 }
 
-// mode toggle
-$("modePro").addEventListener("click",()=>{
-  currentMode="pro";
-  $("modePro").classList.add("active");
-  $("modePU").classList.remove("active");
-});
-$("modePU").addEventListener("click",()=>{
-  currentMode="pu";
-  $("modePU").classList.add("active");
-  $("modePro").classList.remove("active");
-});
-
-// loading spinner
-function showSpinner(){ $("loadingSpinner").style.display = "block"; }
-function hideSpinner(){ $("loadingSpinner").style.display = "none"; }
-
-// timer
 function startTimer(){
-  timerStart = Date.now();
+  timerStart=Date.now();
   $("elapsed").textContent="Elapsed 0.00s";
-  timerInterval = setInterval(()=>{
+  timerInterval=setInterval(()=>{
     const diff=(Date.now()-timerStart)/1000;
     $("elapsed").textContent=`Elapsed ${diff.toFixed(2)}s`;
   },100);
 }
 function stopTimer(){
-  if(timerInterval) clearInterval(timerInterval);
-  const final=((Date.now()-timerStart)/1000).toFixed(2);
-  $("elapsed").textContent=`Elapsed ${final}s`;
+  if(timerInterval)clearInterval(timerInterval);
+  $("elapsed").textContent=`Elapsed ${((Date.now()-timerStart)/1000).toFixed(2)}s`;
 }
 
-// API RUN
-async function runLookup(inputText){
-  const vals = parseInput(inputText);
-  if(!vals.length){
-    out.textContent="[Error] No input values found.";
-    return;
-  }
+$("modePro").addEventListener("click",()=>{ currentMode="pro"; $("modePro").classList.add("active");$("modePU").classList.remove("active");});
+$("modePU").addEventListener("click",()=>{ currentMode="pu"; $("modePU").classList.add("active");$("modePro").classList.remove("active");});
 
-  lastSearchMode = currentMode; // store mode used when search executed
+input.addEventListener("input",()=> $("proMeta").textContent=`${parseInput(input.value).length} entries detected`);
 
-  const endpoint = currentMode==="pu" ? "/api/check-status-pu" : "/api/check-status-pro";
-  const body = currentMode==="pu" ? { pu_nos: vals } : { pros: vals };
+async function runLookup(text){
+  const vals=parseInput(text);
+  if(!vals.length){ out.textContent="[Error] No input values found."; return; }
 
+  lastSearchMode=currentMode;
   status.textContent="Calling backend…";
 
-  const resp = await fetch(endpoint,{
+  const resp = await fetch(currentMode==="pu"?"/api/check-status-pu":"/api/check-status-pro",{
     method:"POST",
     headers:{"Content-Type":"application/json"},
-    body:JSON.stringify(body)
+    body:JSON.stringify(currentMode==="pu"?{pu_nos:vals}:{pros:vals})
   });
 
-  if(!resp.ok){
-    out.textContent="ERROR contacting backend";
-    return;
-  }
-
-  const data = await resp.json();
-  const results = data.results || [];
+  const data=await resp.json();
+  const results=data.results||[];
 
   results.forEach((r,i)=>{
-    const showPro=r.pro||"-";
-    const showPu=r.pu||"-";
-    const f=r.fms||{};
-    const t=r.tms||{};
+    const showPro=r.pro||"-", showPu=r.pu||"-";
+    const f=r.fms||{}, t=r.tms||{};
 
-    // FMS Line
-    let fLine="";
-    if(!f.hasDO){
-      fLine = `FMS:   PRO ${showPro} | PU ${showPu} -> no FMS record found`;
-    } else {
-      fLine =
-        `FMS:   PRO ${padVal(showPro,WIDTH.pro)} | PU ${padVal(showPu,WIDTH.pu)} -> ${padVal(f.DO,WIDTH.DO)} | Loc: ${padVal(f.loc,WIDTH.loc)} | Status: ${padVal(f.status,WIDTH.status)} | Substatus: ${padVal(f.substatus,WIDTH.sub)}`;
-    }
+    let fLine = !f.hasDO
+      ? `FMS:   PRO ${showPro} | PU ${showPu} -> no FMS record found`
+      : `FMS:   PRO ${padVal(showPro,WIDTH.pro)} | PU ${padVal(showPu,WIDTH.pu)} -> ${padVal(f.DO,WIDTH.DO)} | Loc: ${padVal(f.loc,WIDTH.loc)} | Status: ${padVal(f.status,WIDTH.status)} | Substatus: ${padVal(f.substatus,WIDTH.sub)}`;
 
-    // TMS Line
-    let tLine="";
-    if(t.notFound){
-      tLine = `TMS:   PRO ${showPro} | PU ${showPu} -> no TMS record found`;
-    } else {
-      const orderStr = `OrderID ${t.orderId || "-"}`;
-      tLine =
-        `TMS:   PRO ${padVal(showPro,WIDTH.pro)} | PU ${padVal(showPu,WIDTH.pu)} -> ${padVal(orderStr,WIDTH.DO)} | Loc: ${padVal(t.loc,WIDTH.loc)} | Status: ${padVal(t.status,WIDTH.status)} | Substatus: ${padVal(t.substatus,WIDTH.sub)}`;
-    }
+    let tLine = t.notFound
+      ? `TMS:   PRO ${showPro} | PU ${showPu} -> no TMS record found`
+      : `TMS:   PRO ${padVal(showPro,WIDTH.pro)} | PU ${padVal(showPu,WIDTH.pu)} -> ${padVal("OrderID "+(t.orderId||"-"),WIDTH.DO)} | Loc: ${padVal(t.loc,WIDTH.loc)} | Status: ${padVal(t.status,WIDTH.status)} | Substatus: ${padVal(t.substatus,WIDTH.sub)}`;
 
-    out.textContent += (out.textContent ? "\n" : "") + fLine + "\n" + tLine;
-    if(i < results.length-1) out.textContent += "\n---\n";
+    out.textContent += (out.textContent?"\n":"")+fLine+"\n"+tLine;
+    if(i<results.length-1) out.textContent+="\n---\n";
 
     csvRows.push({
-      PRO: showPro,
-      PU: showPu,
-      DO: f.DO || "-",
-      FMS_Loc: f.loc || "-",
-      FMS_Status: f.status || "-",
-      FMS_Substatus: f.substatus || "-",
-      Order_ID: t.orderId || "-",
-      TMS_Loc_SVCS: t.loc || "-",
-      TMS_Status: t.status || "-",
-      TMS_Substatus: t.substatus || "-"
+      PRO:showPro, PU:showPu, DO:f.DO||"-",
+      FMS_Loc:f.loc||"-", FMS_Status:f.status||"-", FMS_Substatus:f.substatus||"-",
+      Order_ID:t.orderId||"-",
+      TMS_Loc_SVCS:t.loc||"-", TMS_Status:t.status||"-", TMS_Substatus:t.substatus||"-"
     });
   });
 
   status.textContent="Complete";
 }
 
-// EXPORT CSV
 expBtn.addEventListener("click",()=>{
-  if(!csvRows.length) return;
+  if(!csvRows.length)return;
+  const now=new Date(), pad=n=>String(n).padStart(2,"0");
+  const ts=`${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}-${pad(now.getMinutes())}`;
+  const mode=lastSearchMode||currentMode;
+  const filename = mode==="pu"?`pu_status_search${ts}.csv`:`pro_status_search${ts}.csv`;
 
-  const now = new Date();
-  const pad=n=>String(n).padStart(2,"0");
-
-  const timestamp =
-    `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}` +
-    `T${pad(now.getHours())}-${pad(now.getMinutes())}`;
-
-  const mode = lastSearchMode || currentMode;
-
-  const filename = mode==="pu"
-    ? `pu_status_search${timestamp}.csv`
-    : `pro_status_search${timestamp}.csv`;
-
-  const headers=[
-    "PRO","PU","DO","FMS_Loc","FMS_Status","FMS_Substatus",
-    "Order_ID","TMS_Loc-SVCS","TMS_Status","TMS_Substatus"
-  ];
-
-  const lines=[
-    headers.join(","),
-    ...csvRows.map(r=>[
-      r.PRO,r.PU,r.DO,r.FMS_Loc,r.FMS_Status,r.FMS_Substatus,
-      r.Order_ID,r.TMS_Loc_SVCS,r.TMS_Status,r.TMS_Substatus
-    ].join(","))
-  ];
+  const headers=["PRO","PU","DO","FMS_Loc","FMS_Status","FMS_Substatus","Order_ID","TMS_Loc-SVCS","TMS_Status","TMS_Substatus"];
+  const lines=[headers.join(","), ...csvRows.map(r=>[r.PRO,r.PU,r.DO,r.FMS_Loc,r.FMS_Status,r.FMS_Substatus,r.Order_ID,r.TMS_Loc_SVCS,r.TMS_Status,r.TMS_Substatus].join(","))];
 
   const blob=new Blob([lines.join("\n")],{type:"text/csv;charset=utf-8"});
   const a=document.createElement("a");
   a.href=URL.createObjectURL(blob);
-  a.download=filename;
-  a.click();
+  a.download=filename; a.click();
 });
 
-// RUN
 runBtn.addEventListener("click",async()=>{
   resetOutput();
   showSpinner();
   startTimer();
-  await runLookup(input.value).finally(()=>{
-    hideSpinner();
-    stopTimer();
-  });
+  await runLookup(input.value);
+  hideSpinner();
+  stopTimer();
 });
 </script>
 
