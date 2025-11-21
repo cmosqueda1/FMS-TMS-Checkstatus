@@ -204,8 +204,8 @@ async function runLookup(text){
       ? `TMS:   PRO ${showPro} | PU ${showPu} -> no TMS record found`
       : `TMS:   PRO ${padVal(showPro,WIDTH.pro)} | PU ${padVal(showPu,WIDTH.pu)} -> ${padVal("OrderID "+(t.orderId||"-"),WIDTH.DO)} | Loc: ${padVal(t.loc,WIDTH.loc)} | Status: ${padVal(t.status,WIDTH.status)} | Substatus: ${padVal(t.substatus,WIDTH.sub)}`;
 
-    out.textContent += (out.textContent?"\n":"")+fLine+"\n"+tLine;
-    if(i<results.length-1) out.textContent+="\n---\n";
+    out.textContent += (out.textContent ? "\n" : "") + fLine + "\n" + tLine;
+    if(i<results.length-1) out.textContent+="\n---";
 
     csvRows.push({
       PRO:showPro, PU:showPu, DO:f.DO||"-",
