@@ -10,38 +10,84 @@
     --bg:#0a0c10;--card:#0f1420;--text:#e6edf6;--muted:#93a4b7;
     --accent:#7c3aed;--accent2:#22d3ee;--ok:#10b981;--bad:#ef4444;--border:#1f2a3a;
   }
+  *{box-sizing:border-box}
   html,body{
-    margin:0;background:var(--bg);color:var(--text);
-    font-family:Inter,system-ui,Segoe UI,Roboto,Ubuntu,Arial,sans-serif;
+    margin:0;
+    background:radial-gradient(1200px 900px at 10% -10%, #121a2b 0%, transparent 60%), var(--bg);
+    color:var(--text);
+    font-family:Inter,system-ui,Segoe UI,Roboto,Ubuntu,Arial,sans-serif
   }
-  .wrap{max-width:980px;margin:40px auto;padding:0 16px 64px}
+  .wrap{max-width:1200px;margin:40px auto;padding:0 16px 64px}
+  h1{margin:0 0 6px;font-size:26px;font-weight:800}
+  .sub{color:var(--muted);margin-bottom:18px}
   .card{
-    background:var(--card);border:1px solid var(--border);
-    border-radius:18px;padding:18px;
+    background:linear-gradient(180deg, rgba(255,255,255,.02), transparent), var(--card);
+    border:1px solid var(--border);border-radius:18px;padding:18px;
+    box-shadow:0 10px 30px rgba(0,0,0,.35)
   }
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
   textarea{
     width:100%;min-height:200px;background:#0b0f19;border:1px solid var(--border);
-    color:var(--text);border-radius:14px;padding:12px 14px;
-    font-size:14px;line-height:1.4;resize:vertical;outline:none
+    color:var(--text);border-radius:14px;padding:12px 14px;font-size:14px;
+    line-height:1.4;resize:vertical;outline:none
   }
-  pre {
-    white-space: pre;
-    font-family: Consolas, "Cascadia Mono", "Fira Code", monospace;
-    background:#0b0f19;
-    border:1px solid var(--border);
-    border-radius:14px;
-    padding:12px;
-    font-size:13px;
-    max-height:420px;
-    overflow:auto;
+
+  .btn{
+    cursor:pointer;border:1px solid transparent;border-radius:14px;
+    padding:12px 16px;font-weight:700;font-size:14px
   }
-  .mode-btn{
-    padding:10px 18px;border-radius:10px;border:1px solid var(--border);
-    background:#0b0f19;color:var(--text);
-  }
-  .mode-btn.active{
+  .btn-primary{
     background:linear-gradient(90deg,var(--accent),var(--accent2));
-    color:#060913;border-color:transparent;
+    color:#060913;
+  }
+  .btn-ghost{background:transparent;border-color:var(--border);color:var(--text)}
+  .btn:disabled{opacity:.6;cursor:not-allowed}
+
+  .mode-btn {
+    padding:10px 18px;
+    border:1px solid var(--border);
+    background:#0b0f19;
+    color:var(--text);
+    border-radius:10px;
+    font-size:13px;
+    cursor:pointer;
+  }
+  .mode-btn.active {
+    background:linear-gradient(90deg,var(--accent),var(--accent2));
+    color:#060913;
+    border-color:transparent;
+    font-weight:700;
+  }
+
+  #loadingSpinner {
+    display:none;
+    margin-top:12px;
+    text-align:center;
+  }
+  .spinner {
+    width:38px;height:38px;
+    border-radius:50%;border:4px solid rgba(255,255,255,0.12);
+    border-top-color: var(--accent2);
+    border-right-color: var(--accent);
+    animation: spin .85s linear infinite;
+    margin:0 auto;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .bar{height:12px;border-radius:999px;background:#0b0f19;
+    border:1px solid var(--border);overflow:hidden;margin-top:8px}
+  .fill{height:100%;width:0;
+    background:linear-gradient(90deg,var(--ok),var(--accent2));transition:width .2s ease}
+
+  pre{
+    white-space:pre; /* keep exact spacing */
+    word-break:normal;
+    font-family:Consolas, "Cascadia Mono", "Fira Code", monospace;
+    background:#0b0f19;
+    border:1px solid var(--border);border-radius:14px;padding:12px;
+    font-size:13px;max-height:420px;
+    overflow-y:auto;
+    overflow-x:hidden; /* avoid horizontal scrollbar */
   }
 </style>
 </head>
@@ -51,22 +97,34 @@
   <h1>Pro Status Check: FMS vs TMS</h1>
 
   <div class="card">
-    <div style="margin-bottom:10px; display:flex; gap:6px;">
+
+    <div class="row" style="margin-bottom:10px; gap:6px;">
       <button id="modePro" class="mode-btn active">Search Pro</button>
       <button id="modePU" class="mode-btn">Search PU</button>
     </div>
 
-    <textarea id="input"></textarea>
+    <textarea id="input" placeholder="18560935
+3178258
+3178259"></textarea>
 
-    <div style="display:flex; justify-content:space-between; margin-top:6px">
-      <div id="proMeta" class="muted">0 entries detected</div>
-      <div id="status" class="muted">Idle</div>
+    <div class="row" style="justify-content:space-between;margin-top:6px">
+      <div class="muted" id="proMeta">0 entries detected</div>
+      <div class="muted" id="status">Idle</div>
     </div>
 
-    <div style="margin-top:12px; display:flex; gap:10px;">
-      <button class="mode-btn" id="run">Check Status</button>
-      <button class="mode-btn" id="export">Export Results (.csv)</button>
+    <div class="muted" id="elapsed" style="margin-top:2px;">Elapsed —</div>
+    <div class="bar"><div class="fill" id="fill"></div></div>
+
+    <div class="row" style="margin-top:10px">
+      <button class="btn btn-primary" id="run">Check Status</button>
+      <button class="btn btn-ghost" id="export">Export Results (.csv)</button>
     </div>
+
+    <div id="loadingSpinner">
+      <div class="spinner"></div>
+      <div style="margin-top:8px;font-size:12px;color:var(--muted)">Checking status...</div>
+    </div>
+
   </div>
 
   <div class="card" style="margin-top:16px">
@@ -75,146 +133,234 @@
   </div>
 </div>
 
+
 <script>
-/* ===========================
-   FIXED GLOBAL COLUMN RULES
-=========================== */
+// ========== SHARED UI ==========
+const $ = id => document.getElementById(id);
+let currentMode = "pro";
+const input = $("input");
+const runBtn = $("run");
+const expBtn = $("export");
+const out = $("out");
+const fill = $("fill");
+const status = $("status");
+let timerStart = 0, timerInterval = null, csvRows = [];
 
-const COL_START = {
-  PRO: 8,
-  PIPE_PU: 22,
-  DO: 38,
-  PIPE_LOC: 58,
-  PIPE_STATUS: 78,
-  PIPE_SUB: 110
-};
+// padding helper for values (data only)
+function padVal(val, width){
+  val = String(val ?? "-");
+  if(val.length > width) return val.slice(0,width);
+  return val + " ".repeat(width - val.length);
+}
 
+// fixed widths for each value (NOT label)
 const WIDTH = {
   pro: 9,
   pu: 9,
-  DO: 9,
-  loc: 11,
+  DO: 14,       // full DO string, e.g. DO251100008045
+  loc: 12,
   status: 30,
   sub: 35
 };
 
-function trunc(val, max){
-  val = String(val ?? "-");
-  return val.length > max ? val.slice(0,max) : val;
+function parseInput(text){ return (String(text).match(/\b\d{4,14}\b/g) || []); }
+function showSpinner(){ $("loadingSpinner").style.display = "block"; }
+function hideSpinner(){ $("loadingSpinner").style.display = "none"; }
+function line(msg){ out.textContent += (out.textContent ? "\n" : "") + msg; }
+
+function resetOutput(){
+  out.textContent = "";
+  fill.style.width = "0%";
+  $("elapsed").textContent = "Elapsed —";
+  status.textContent = "Idle";
+  csvRows = [];
 }
 
-function padToPos(str, col){
-  const needed = Math.max(0, col - str.length);
-  return str + " ".repeat(needed);
+// TIMER
+function startTimer(){
+  timerStart = Date.now();
+  $("elapsed").textContent = "Elapsed 0.00s";
+  timerInterval = setInterval(() => {
+    const diff = (Date.now() - timerStart) / 1000;
+    $("elapsed").textContent = `Elapsed ${diff.toFixed(2)}s`;
+  },100);
+}
+function stopTimer(){
+  if(timerInterval) clearInterval(timerInterval);
+  const final = ((Date.now()-timerStart)/1000).toFixed(2);
+  $("elapsed").textContent = `Elapsed ${final}s`;
+}
+function setProg(done,total){
+  if(!total) return;
+  fill.style.width = ((done/total)*100).toFixed(0) + "%";
 }
 
-function buildLine(prefix, row){
-  let line = prefix;               // "FMS: " or "TMS: "
-  line = padToPos(line, COL_START.PRO);
+input.addEventListener("input",()=>{
+  const vals = parseInput(input.value);
+  $("proMeta").textContent = `${vals.length} entries detected`;
+});
 
-  line += `PRO ${trunc(row.pro, WIDTH.pro)}`;
-  line = padToPos(line, COL_START.PIPE_PU);
-
-  line += `| PU ${trunc(row.pu, WIDTH.pu)}`;
-  line = padToPos(line, COL_START.DO);
-
-  line += `-> ${row.DO}`;
-  line = padToPos(line, COL_START.PIPE_LOC);
-
-  line += `| Loc: ${trunc(row.loc, WIDTH.loc)}`;
-  line = padToPos(line, COL_START.PIPE_STATUS);
-
-  line += `| Status: ${trunc(row.status, WIDTH.status)}`;
-  line = padToPos(line, COL_START.PIPE_SUB);
-
-  line += `| Substatus: ${trunc(row.sub, WIDTH.sub)}`;
-  return line;
-}
-
-/* ===========================
-   UI + API CALLS
-=========================== */
-
-const $ = id => document.getElementById(id);
-let currentMode = "pro";
-const out = $("out");
-
-// Mode switch
+// MODE SWITCH
 $("modePro").addEventListener("click",()=>{
-  currentMode="pro";
+  currentMode = "pro";
   $("modePro").classList.add("active");
   $("modePU").classList.remove("active");
 });
 $("modePU").addEventListener("click",()=>{
-  currentMode="pu";
+  currentMode = "pu";
   $("modePU").classList.add("active");
   $("modePro").classList.remove("active");
 });
 
-function parseInput(text){
-  return (String(text).match(/\b\d{4,14}\b/g) || []);
-}
 
-$("input").addEventListener("input",()=>{
-  $("proMeta").textContent = `${parseInput($("input").value).length} entries detected`;
-});
-
-async function runLookup(){
-  out.textContent="";
-  const vals = parseInput($("input").value);
+// ========== RUN LOOKUP ==========
+async function runLookup(inputText){
+  const vals = parseInput(inputText);
   if(!vals.length){
-    out.textContent="No input detected.";
+    line("[Error] No input values found.");
     return;
   }
 
-  const endpoint = currentMode==="pu" ? "/api/check-status-pu" : "/api/check-status-pro";
-  const body = currentMode==="pu" ? { pu_nos: vals } : { pros: vals };
+  const endpoint = currentMode === "pu" ? "/api/check-status-pu" : "/api/check-status-pro";
+  const body = currentMode === "pu" ? { pu_nos: vals } : { pros: vals };
 
+  status.textContent = "Calling backend…";
   const resp = await fetch(endpoint,{
     method:"POST",
     headers:{"Content-Type":"application/json"},
-    body:JSON.stringify(body)
+    body: JSON.stringify(body)
   });
+
+  if(!resp.ok){
+    line("ERROR contacting backend");
+    status.textContent = "Error";
+    return;
+  }
 
   const data = await resp.json();
   const results = data.results || [];
 
   results.forEach((r,i)=>{
-    const rowF = {
-      pro: r.pro || "-",
-      pu: r.pu || "-",
-      DO: r.fms?.DO || "-",
-      loc: r.fms?.loc || "-",
-      status: r.fms?.status || "-",
-      sub: r.fms?.substatus || "-"
-    };
+    const searchValue = currentMode === "pu" ? r.pu : r.pro;
+    const showPro = r.pro || "-";
+    const showPu  = r.pu  || "-";
 
-    const rowT = {
-      pro: r.pro || "-",
-      pu: r.pu || "-",
-      DO: `OrderID ${r.tms?.orderId || "-"}`,
-      loc: r.tms?.loc || "-",
-      status: r.tms?.status || "-",
-      sub: r.tms?.substatus || "-"
-    };
+    const f = r.fms || {};
+    const t = r.tms || {};
 
-    if(!r.fms?.hasDO){
-      out.textContent += `FMS: no FMS record found for this ${currentMode.toUpperCase()}\n`;
+    // =========================
+    // FMS DISPLAY LOGIC
+    // =========================
+
+    let fLine = "";
+
+    if(!f.hasDO){
+      // No FMS record
+      if(currentMode === "pu"){
+        fLine = `FMS: PRO ${showPro} | PU ${showPu} -> no FMS record found for this PU`;
+      } else {
+        fLine = `FMS: PRO ${showPro} | PU ${showPu} -> no FMS record found for this PRO`;
+      }
     } else {
-      out.textContent += buildLine("FMS: ", rowF) + "\n";
+      // match spacing style from your example
+      const proBlock   = padVal(showPro, WIDTH.pro);
+      const puBlock    = padVal(showPu,  WIDTH.pu);
+      const doBlock    = padVal(f.DO || "-", WIDTH.DO);
+      const locBlock   = padVal(f.loc || "-", WIDTH.loc);
+      const statBlock  = padVal(f.status || "-", WIDTH.status);
+      const subBlock   = padVal(f.substatus || "-", WIDTH.sub);
+
+      fLine =
+        `FMS:   PRO ${proBlock} | PU ${puBlock} -> ${doBlock} | Loc: ${locBlock} | Status: ${statBlock} | Substatus: ${subBlock}`;
     }
 
-    if(r.tms?.notFound){
-      out.textContent += `TMS: no TMS record found for this ${currentMode.toUpperCase()}\n`;
+    // =========================
+    // TMS DISPLAY LOGIC
+    // =========================
+
+    let tLine = "";
+
+    if(t.notFound){
+      if(currentMode === "pu"){
+        tLine = `TMS: PRO ${showPro} | PU ${showPu} -> no TMS record found for this PU`;
+      } else {
+        tLine = `TMS: PRO ${showPro} | PU ${showPu} -> no TMS record found for this PRO`;
+      }
     } else {
-      out.textContent += buildLine("TMS: ", rowT) + "\n";
+      const proBlock   = padVal(showPro, WIDTH.pro);
+      const puBlock    = padVal(showPu,  WIDTH.pu);
+      const orderStr   = `OrderID ${t.orderId || "-"}`;
+      const doBlockT   = padVal(orderStr, WIDTH.DO);
+      const locBlock   = padVal(t.loc || "-", WIDTH.loc);
+      const statBlock  = padVal(t.status || "-", WIDTH.status);
+      const subBlock   = padVal(t.substatus || "-", WIDTH.sub);
+
+      tLine =
+        `TMS:   PRO ${proBlock} | PU ${puBlock} -> ${doBlockT} | Loc: ${locBlock} | Status: ${statBlock} | Substatus: ${subBlock}`;
     }
 
-    if(i < results.length-1) out.textContent += "\n";
+    // OUTPUT LINES
+    line(fLine);
+    line(tLine);
+
+    if(i < results.length - 1) line("---");
+
+    // CSV
+    csvRows.push({
+      PRO: showPro,
+      PU: showPu,
+      DO: f.DO || "-",
+      FMS_Loc: f.loc || "-",
+      FMS_Status: f.status || "-",
+      FMS_Substatus: f.substatus || "-",
+      Order_ID: t.orderId || "-",
+      TMS_Loc_SVCS: t.loc || "-",
+      TMS_Status: t.status || "-",
+      TMS_Substatus: t.substatus || "-"
+    });
+
+    setProg(i+1, results.length);
   });
+
+  status.textContent = "Complete";
+  expBtn.disabled = !csvRows.length;
 }
 
-$("run").addEventListener("click", runLookup);
+
+// ========== EXPORT CSV ==========
+expBtn.addEventListener("click",()=>{
+  const headers = [
+    "PRO","PU","DO","FMS_Loc","FMS_Status","FMS_Substatus",
+    "Order_ID","TMS_Loc-SVCS","TMS_Status","TMS_Substatus"
+  ];
+
+  const lines = [
+    headers.join(","),
+    ...csvRows.map(r=>[
+      r.PRO,r.PU,r.DO,r.FMS_Loc,r.FMS_Status,r.FMS_Substatus,
+      r.Order_ID,r.TMS_Loc_SVCS,r.TMS_Status,r.TMS_Substatus
+    ].join(","))
+  ];
+
+  const blob = new Blob([lines.join("\n")],{type:"text/csv;charset=utf-8"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download="pro-status-check.csv";
+  a.click();
+});
+
+
+// ========== RUN BTN ==========
+runBtn.addEventListener("click",async()=>{
+  resetOutput();
+  showSpinner();
+  startTimer();
+  await runLookup(input.value).finally(()=>{
+    hideSpinner();
+    stopTimer();
+  });
+});
+
 </script>
 
 </body>
