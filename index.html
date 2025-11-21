@@ -10,43 +10,20 @@
     --bg:#0a0c10;--card:#0f1420;--text:#e6edf6;--muted:#93a4b7;
     --accent:#7c3aed;--accent2:#22d3ee;--ok:#10b981;--bad:#ef4444;--border:#1f2a3a;
   }
-  *{box-sizing:border-box}
   html,body{
-    margin:0;
-    background:radial-gradient(1200px 900px at 10% -10%, #121a2b 0%, transparent 60%), var(--bg);
-    color:var(--text);
-    font-family:Inter,system-ui,Segoe UI,Roboto,Ubuntu,Arial,sans-serif
+    margin:0;background:var(--bg);color:var(--text);
+    font-family:Inter,system-ui,Segoe UI,Roboto,Ubuntu,Arial,sans-serif;
   }
   .wrap{max-width:980px;margin:40px auto;padding:0 16px 64px}
-  h1{margin:0 0 6px;font-size:26px;font-weight:800}
   .card{
-    background:linear-gradient(180deg, rgba(255,255,255,.02), transparent), var(--card);
-    border:1px solid var(--border);border-radius:18px;padding:18px;
-    box-shadow:0 10px 30px rgba(0,0,0,.35)
+    background:var(--card);border:1px solid var(--border);
+    border-radius:18px;padding:18px;
   }
 
   textarea{
     width:100%;min-height:200px;background:#0b0f19;border:1px solid var(--border);
     color:var(--text);border-radius:14px;padding:12px 14px;
     font-size:14px;line-height:1.4;resize:vertical;outline:none
-  }
-
-  .btn{
-    cursor:pointer;border:1px solid transparent;border-radius:14px;
-    padding:12px 16px;font-weight:700;font-size:14px
-  }
-  .btn-primary{background:linear-gradient(90deg,var(--accent),var(--accent2));color:#060913}
-  .btn-ghost{background:transparent;border-color:var(--border);color:var(--text)}
-  .btn:disabled{opacity:.6;cursor:not-allowed}
-
-  .mode-btn {
-    padding:10px 18px;border:1px solid var(--border);
-    background:#0b0f19;color:var(--text);
-    border-radius:10px;font-size:13px;cursor:pointer;
-  }
-  .mode-btn.active {
-    background:linear-gradient(90deg,var(--accent),var(--accent2));
-    color:#060913;border-color:transparent;font-weight:700;
   }
 
   pre {
@@ -61,23 +38,15 @@
     overflow:auto;
   }
 
-  #loadingSpinner {
-    display:none;text-align:center;margin-top:12px;
+  .mode-btn{
+    padding:10px 18px;border-radius:10px;border:1px solid var(--border);
+    background:#0b0f19;color:var(--text);
   }
-  .spinner {
-    width:38px;height:38px;border-radius:50%;
-    border:4px solid rgba(255,255,255,0.12);
-    border-top-color: var(--accent2);
-    border-right-color: var(--accent);
-    animation: spin .85s linear infinite;
-    margin:0 auto;
+  .mode-btn.active{
+    background:linear-gradient(90deg,var(--accent),var(--accent2));
+    color:#060913;border-color:transparent;
   }
-  @keyframes spin { to { transform: rotate(360deg); } }
 
-  .bar{height:12px;border-radius:999px;background:#0b0f19;
-    border:1px solid var(--border);overflow:hidden;margin-top:8px}
-  .fill{height:100%;width:0;
-    background:linear-gradient(90deg,var(--ok),var(--accent2));transition:width .2s ease}
 </style>
 </head>
 
@@ -86,36 +55,22 @@
   <h1>Pro Status Check: FMS vs TMS</h1>
 
   <div class="card">
-
-    <!-- MODE SWITCH -->
     <div style="margin-bottom:10px; display:flex; gap:6px;">
       <button id="modePro" class="mode-btn active">Search Pro</button>
       <button id="modePU" class="mode-btn">Search PU</button>
     </div>
 
-    <textarea id="input" placeholder="18560935
-3178258
-278057
-3192386"></textarea>
+    <textarea id="input"></textarea>
 
     <div style="display:flex; justify-content:space-between; margin-top:6px">
       <div id="proMeta" class="muted">0 entries detected</div>
       <div id="status" class="muted">Idle</div>
     </div>
 
-    <div id="elapsed" class="muted" style="margin-top:2px;">Elapsed —</div>
-    <div class="bar"><div class="fill" id="fill"></div></div>
-
-    <div style="margin-top:10px; display:flex; gap:10px;">
-      <button class="btn btn-primary" id="run">Check Status</button>
-      <button class="btn btn-ghost" id="export">Export Results (.csv)</button>
+    <div style="margin-top:12px; display:flex; gap:10px;">
+      <button class="mode-btn" id="run">Check Status</button>
+      <button class="mode-btn" id="export">Export Results (.csv)</button>
     </div>
-
-    <div id="loadingSpinner">
-      <div class="spinner"></div>
-      <div style="margin-top:8px;font-size:12px;color:var(--muted)">Checking status...</div>
-    </div>
-
   </div>
 
   <div class="card" style="margin-top:16px">
@@ -125,31 +80,39 @@
 </div>
 
 <script>
+const PREFIX_WIDTH = 11;
+
+const COL = {
+  pro: 14,
+  pu: 14,
+  DO: 14,
+  loc: 16,
+  status: 35,
+  sub: 40
+};
+
 const $ = id => document.getElementById(id);
 let currentMode = "pro";
+const out = $("out");
 
-const input  = $("input");
-const out    = $("out");
-const runBtn = $("run");
-const expBtn = $("export");
-const fill   = $("fill");
-const status = $("status");
-
-let csvRows = [];
-
-function parseInput(text){ return (String(text).match(/\b\d{4,14}\b/g) || []); }
-
-function line(msg){ out.textContent += (out.textContent ? "\n" : "") + msg; }
-
-function resetOutput(){
-  out.textContent="";
-  fill.style.width="0%";
-  $("elapsed").textContent="Elapsed —";
-  status.textContent="Idle";
-  csvRows=[];
+function pad(val, width){
+  val = String(val ?? "-");
+  return val + " ".repeat(Math.max(0, width - val.length));
 }
 
-// Mode switch
+function prefixBlock(prefix){
+  const txt = prefix + ":";
+  return txt + " ".repeat(Math.max(0, PREFIX_WIDTH - txt.length));
+}
+
+function line(msg){
+  out.textContent += (out.textContent ? "\n" : "") + msg;
+}
+
+function parseInput(text){
+  return (String(text).match(/\b\d{4,14}\b/g) || []);
+}
+
 $("modePro").addEventListener("click",()=>{
   currentMode="pro";
   $("modePro").classList.add("active");
@@ -161,97 +124,74 @@ $("modePU").addEventListener("click",()=>{
   $("modePro").classList.remove("active");
 });
 
-input.addEventListener("input",()=>{
-  $("proMeta").textContent = `${parseInput(input.value).length} entries detected`;
+$("input").addEventListener("input",()=>{
+  $("proMeta").textContent = `${parseInput($("input").value).length} entries detected`;
 });
 
-// Padding helper
-function pad(v,n){
-  v = String(v ?? "-");
-  return v + " ".repeat(Math.max(0, n - v.length));
-}
-
-async function runLookup(inputText){
-  const values = parseInput(inputText);
+async function runLookup(){
+  out.textContent="";
+  const values = parseInput($("input").value);
   if(!values.length){
     line("[Error] No input values found.");
     return;
   }
 
   const endpoint = currentMode==="pu" ? "/api/check-status-pu" : "/api/check-status-pro";
-  const body = currentMode==="pu" ? { pu_nos: values } : { pros: values };
-
-  status.textContent = "Calling backend…";
   const resp = await fetch(endpoint,{
     method:"POST",
     headers:{"Content-Type":"application/json"},
-    body:JSON.stringify(body)
+    body:JSON.stringify(currentMode==="pu" ? { pu_nos: values } : { pros: values })
   });
 
   const data = await resp.json();
   const results = data.results || [];
 
-  const rows = results.map(r => ({
-    pro: r.pro || "-",
-    pu: r.pu || "-",
-    DO: r.fms?.DO || "-",
-    fLoc: r.fms?.loc || "-",
-    fStatus: r.fms?.status || "-",
-    fSub: r.fms?.substatus || "-",
-    tOrder: r.tms?.orderId || "-",
-    tLoc: r.tms?.loc || "-",
-    tStatus: r.tms?.status || "-",
-    tSub: r.tms?.substatus || "-"
-  }));
-
-  const widths = {
-    pro: Math.max(...rows.map(r => r.pro.length)),
-    pu: Math.max(...rows.map(r => r.pu.length)),
-    DO: Math.max(...rows.map(r => r.DO.length)),
-    fLoc: Math.max(...rows.map(r => r.fLoc.length)),
-    fStatus: Math.max(...rows.map(r => r.fStatus.length)),
-    fSub: Math.max(...rows.map(r => r.fSub.length)),
-    tOrder: Math.max(...rows.map(r => r.tOrder.length)),
-    tLoc: Math.max(...rows.map(r => r.tLoc.length)),
-    tStatus: Math.max(...rows.map(r => r.tStatus.length)),
-    tSub: Math.max(...rows.map(r => r.tSub.length)),
-  };
-
-  out.textContent="";
-
   results.forEach((r,i)=>{
-    const searchValue = currentMode==="pu" ? r.pu : r.pro;
-    const hasF = r.fms?.hasDO;
-    const hasT = !r.tms?.notFound;
+    const row = {
+      pro: r.pro || "-",
+      pu: r.pu || "-",
+      DO: r.fms?.DO || "-",
+      loc: r.fms?.loc || "-",
+      status: r.fms?.status || "-",
+      sub: r.fms?.substatus || "-"
+    };
 
-    if(!hasF){
-      line(`FMS: ${searchValue} -> no FMS record found for this ${currentMode.toUpperCase()}`);
+    const trow = {
+      pro: r.pro || "-",
+      pu: r.pu || "-",
+      orderId: r.tms?.orderId || "-",
+      loc: r.tms?.loc || "-",
+      status: r.tms?.status || "-",
+      sub: r.tms?.substatus || "-"
+    };
+
+    // Build prefix padded
+    const prefF = prefixBlock("FMS") + " ";
+    const prefT = prefixBlock("TMS") + " ";
+
+    if(!r.fms?.hasDO){
+      line(prefF + `no FMS record found for this ${currentMode.toUpperCase()}`);
     } else {
-      const row = rows[i];
       line(
-        `FMS | PRO ${pad(row.pro,widths.pro)} | PU ${pad(row.pu,widths.pu)} -> DO ${pad(row.DO,widths.DO)} | Loc ${pad(row.fLoc,widths.fLoc)} | Status ${pad(row.fStatus,widths.fStatus)} | Substatus ${pad(row.fSub,widths.fSub)}`
+        prefF +
+        `${pad("PRO  " + row.pro, COL.pro + 5)}   |   ${pad("PU  " + row.pu, COL.pu + 5)}   ->   ${pad(row.DO, COL.DO)}   |   ${pad("Status  " + row.status, COL.status + 8)}   |   ${pad("Substatus  " + row.sub, COL.sub + 11)}`
       );
     }
 
-    if(!hasT){
-      line(`TMS: ${searchValue} -> no TMS record found for this ${currentMode.toUpperCase()}`);
+    if(r.tms?.notFound){
+      line(prefT + `no TMS record found for this ${currentMode.toUpperCase()}`);
     } else {
-      const row = rows[i];
       line(
-        `TMS | PRO ${pad(row.pro,widths.pro)} | PU ${pad(row.pu,widths.pu)} -> OrderID ${pad(row.tOrder,widths.tOrder)} | Loc/SVCS ${pad(row.tLoc,widths.tLoc)} | Status ${pad(row.tStatus,widths.tStatus)} | Substatus ${pad(row.tSub,widths.tSub)}`
+        prefT +
+        `${pad("PRO  " + trow.pro, COL.pro + 5)}   |   ${pad("PU  " + trow.pu, COL.pu + 5)}   ->   ${pad("OrderID " + trow.orderId, COL.DO + 9)}   |   ${pad("Status  " + trow.status, COL.status + 8)}   |   ${pad("Substatus  " + trow.sub, COL.sub + 11)}`
       );
     }
 
-    if(i < results.length-1) line("---");
+    if(i < results.length-1) line("");
   });
-
-  status.textContent="Complete";
 }
 
-runBtn.addEventListener("click", async () => {
-  resetOutput();
-  await runLookup(input.value);
-});
+$("run").addEventListener("click", runLookup);
 </script>
 
 </body>
