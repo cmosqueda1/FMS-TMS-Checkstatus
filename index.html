@@ -19,17 +19,16 @@
   }
   .wrap{max-width:980px;margin:40px auto;padding:0 16px 64px}
   h1{margin:0 0 6px;font-size:26px;font-weight:800}
-  .sub{color:var(--muted);margin-bottom:18px}
   .card{
     background:linear-gradient(180deg, rgba(255,255,255,.02), transparent), var(--card);
     border:1px solid var(--border);border-radius:18px;padding:18px;
     box-shadow:0 10px 30px rgba(0,0,0,.35)
   }
-  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+
   textarea{
     width:100%;min-height:200px;background:#0b0f19;border:1px solid var(--border);
-    color:var(--text);border-radius:14px;padding:12px 14px;font-size:14px;
-    line-height:1.4;resize:vertical;outline:none
+    color:var(--text);border-radius:14px;padding:12px 14px;
+    font-size:14px;line-height:1.4;resize:vertical;outline:none
   }
 
   .btn{
@@ -37,33 +36,37 @@
     padding:12px 16px;font-weight:700;font-size:14px
   }
   .btn-primary{background:linear-gradient(90deg,var(--accent),var(--accent2));color:#060913}
-  .btn-ghost{background:transparent;border-color:var(--border);}
+  .btn-ghost{background:transparent;border-color:var(--border);color:var(--text)}
   .btn:disabled{opacity:.6;cursor:not-allowed}
 
   .mode-btn {
-    padding:10px 18px;
-    border:1px solid var(--border);
-    background:#0b0f19;
-    color:var(--text);
-    border-radius:10px;
-    font-size:13px;
-    cursor:pointer;
+    padding:10px 18px;border:1px solid var(--border);
+    background:#0b0f19;color:var(--text);
+    border-radius:10px;font-size:13px;cursor:pointer;
   }
   .mode-btn.active {
     background:linear-gradient(90deg,var(--accent),var(--accent2));
-    color:#060913;
-    border-color:transparent;
-    font-weight:700;
+    color:#060913;border-color:transparent;font-weight:700;
+  }
+
+  pre {
+    white-space: pre;
+    font-family: Consolas, "Cascadia Mono", "Fira Code", monospace;
+    background:#0b0f19;
+    border:1px solid var(--border);
+    border-radius:14px;
+    padding:12px;
+    font-size:13px;
+    max-height:420px;
+    overflow:auto;
   }
 
   #loadingSpinner {
-    display:none;
-    margin-top:12px;
-    text-align:center;
+    display:none;text-align:center;margin-top:12px;
   }
   .spinner {
-    width:38px;height:38px;
-    border-radius:50%;border:4px solid rgba(255,255,255,0.12);
+    width:38px;height:38px;border-radius:50%;
+    border:4px solid rgba(255,255,255,0.12);
     border-top-color: var(--accent2);
     border-right-color: var(--accent);
     animation: spin .85s linear infinite;
@@ -75,12 +78,6 @@
     border:1px solid var(--border);overflow:hidden;margin-top:8px}
   .fill{height:100%;width:0;
     background:linear-gradient(90deg,var(--ok),var(--accent2));transition:width .2s ease}
-
-  pre{
-    white-space:pre-wrap;word-break:break-word;background:#0b0f19;
-    border:1px solid var(--border);border-radius:14px;padding:12px;
-    font-size:13px;max-height:420px;overflow:auto
-  }
 </style>
 </head>
 
@@ -90,24 +87,26 @@
 
   <div class="card">
 
-    <div class="row" style="margin-bottom:10px; gap:6px;">
+    <!-- MODE SWITCH -->
+    <div style="margin-bottom:10px; display:flex; gap:6px;">
       <button id="modePro" class="mode-btn active">Search Pro</button>
       <button id="modePU" class="mode-btn">Search PU</button>
     </div>
 
     <textarea id="input" placeholder="18560935
 3178258
-3178259"></textarea>
+278057
+3192386"></textarea>
 
-    <div class="row" style="justify-content:space-between;margin-top:6px">
-      <div class="muted" id="proMeta">0 entries detected</div>
-      <div class="muted" id="status">Idle</div>
+    <div style="display:flex; justify-content:space-between; margin-top:6px">
+      <div id="proMeta" class="muted">0 entries detected</div>
+      <div id="status" class="muted">Idle</div>
     </div>
 
-    <div class="muted" id="elapsed" style="margin-top:2px;">Elapsed —</div>
+    <div id="elapsed" class="muted" style="margin-top:2px;">Elapsed —</div>
     <div class="bar"><div class="fill" id="fill"></div></div>
 
-    <div class="row" style="margin-top:10px">
+    <div style="margin-top:10px; display:flex; gap:10px;">
       <button class="btn btn-primary" id="run">Check Status</button>
       <button class="btn btn-ghost" id="export">Export Results (.csv)</button>
     </div>
@@ -125,200 +124,134 @@
   </div>
 </div>
 
-
 <script>
-
-// ========== SHARED UI ==========
 const $ = id => document.getElementById(id);
 let currentMode = "pro";
-const input = $("input");
+
+const input  = $("input");
+const out    = $("out");
 const runBtn = $("run");
 const expBtn = $("export");
-const out = $("out");
-const fill = $("fill");
+const fill   = $("fill");
 const status = $("status");
-let timerStart = 0, timerInterval = null, csvRows = [];
+
+let csvRows = [];
 
 function parseInput(text){ return (String(text).match(/\b\d{4,14}\b/g) || []); }
-function showSpinner(){ $("loadingSpinner").style.display = "block"; }
-function hideSpinner(){ $("loadingSpinner").style.display = "none"; }
+
 function line(msg){ out.textContent += (out.textContent ? "\n" : "") + msg; }
 
 function resetOutput(){
-  out.textContent = "";
-  fill.style.width = "0%";
-  $("elapsed").textContent = "Elapsed —";
-  status.textContent = "Idle";
-  csvRows = [];
+  out.textContent="";
+  fill.style.width="0%";
+  $("elapsed").textContent="Elapsed —";
+  status.textContent="Idle";
+  csvRows=[];
 }
 
-// TIMER
-function startTimer(){
-  timerStart = Date.now();
-  $("elapsed").textContent = "Elapsed 0.00s";
-  timerInterval = setInterval(() => {
-    const diff = (Date.now() - timerStart) / 1000;
-    $("elapsed").textContent = `Elapsed ${diff.toFixed(2)}s`;
-  },100);
-}
-function stopTimer(){
-  if(timerInterval) clearInterval(timerInterval);
-  const final = ((Date.now()-timerStart)/1000).toFixed(2);
-  $("elapsed").textContent = `Elapsed ${final}s`;
-}
-function setProg(done,total){
-  if(!total) return;
-  fill.style.width = ((done/total)*100).toFixed(0) + "%";
-}
-
-input.addEventListener("input",()=>{
-  const vals = parseInput(input.value);
-  $("proMeta").textContent = `${vals.length} entries detected`;
-});
-
-// MODE SWITCH
+// Mode switch
 $("modePro").addEventListener("click",()=>{
-  currentMode = "pro";
+  currentMode="pro";
   $("modePro").classList.add("active");
   $("modePU").classList.remove("active");
 });
 $("modePU").addEventListener("click",()=>{
-  currentMode = "pu";
+  currentMode="pu";
   $("modePU").classList.add("active");
   $("modePro").classList.remove("active");
 });
 
+input.addEventListener("input",()=>{
+  $("proMeta").textContent = `${parseInput(input.value).length} entries detected`;
+});
 
-// ========== RUN LOOKUP ==========
+// Padding helper
+function pad(v,n){
+  v = String(v ?? "-");
+  return v + " ".repeat(Math.max(0, n - v.length));
+}
+
 async function runLookup(inputText){
-  const vals = parseInput(inputText);
-  if(!vals.length){
+  const values = parseInput(inputText);
+  if(!values.length){
     line("[Error] No input values found.");
     return;
   }
 
-  const endpoint = currentMode === "pu" ? "/api/check-status-pu" : "/api/check-status-pro";
-  const body = currentMode === "pu" ? { pu_nos: vals } : { pros: vals };
+  const endpoint = currentMode==="pu" ? "/api/check-status-pu" : "/api/check-status-pro";
+  const body = currentMode==="pu" ? { pu_nos: values } : { pros: values };
 
   status.textContent = "Calling backend…";
   const resp = await fetch(endpoint,{
     method:"POST",
     headers:{"Content-Type":"application/json"},
-    body: JSON.stringify(body)
+    body:JSON.stringify(body)
   });
-
-  if(!resp.ok){
-    line("ERROR contacting backend");
-    status.textContent = "Error";
-    return;
-  }
 
   const data = await resp.json();
   const results = data.results || [];
 
+  const rows = results.map(r => ({
+    pro: r.pro || "-",
+    pu: r.pu || "-",
+    DO: r.fms?.DO || "-",
+    fLoc: r.fms?.loc || "-",
+    fStatus: r.fms?.status || "-",
+    fSub: r.fms?.substatus || "-",
+    tOrder: r.tms?.orderId || "-",
+    tLoc: r.tms?.loc || "-",
+    tStatus: r.tms?.status || "-",
+    tSub: r.tms?.substatus || "-"
+  }));
+
+  const widths = {
+    pro: Math.max(...rows.map(r => r.pro.length)),
+    pu: Math.max(...rows.map(r => r.pu.length)),
+    DO: Math.max(...rows.map(r => r.DO.length)),
+    fLoc: Math.max(...rows.map(r => r.fLoc.length)),
+    fStatus: Math.max(...rows.map(r => r.fStatus.length)),
+    fSub: Math.max(...rows.map(r => r.fSub.length)),
+    tOrder: Math.max(...rows.map(r => r.tOrder.length)),
+    tLoc: Math.max(...rows.map(r => r.tLoc.length)),
+    tStatus: Math.max(...rows.map(r => r.tStatus.length)),
+    tSub: Math.max(...rows.map(r => r.tSub.length)),
+  };
+
+  out.textContent="";
+
   results.forEach((r,i)=>{
-    const searchValue = currentMode === "pu" ? r.pu : r.pro;
-    const showPro = r.pro || "-";
-    const showPu  = r.pu  || "-";
+    const searchValue = currentMode==="pu" ? r.pu : r.pro;
+    const hasF = r.fms?.hasDO;
+    const hasT = !r.tms?.notFound;
 
-    const f = r.fms || {};
-    const t = r.tms || {};
-
-    // =========================
-    // FMS DISPLAY LOGIC
-    // =========================
-
-    let fLine = "";
-
-    if(!f.hasDO){
-      // No FMS record
-      if(currentMode === "pu"){
-        fLine = `FMS: ${searchValue} -> no FMS record found for this PU`;
-      } else {
-        fLine = `FMS: ${searchValue} -> no FMS record found for this PRO`;
-      }
+    if(!hasF){
+      line(`FMS: ${searchValue} -> no FMS record found for this ${currentMode.toUpperCase()}`);
     } else {
-      fLine = `FMS: PRO ${showPro} | PU ${showPu} -> DO ${f.DO || "-"} | Loc: ${f.loc || "-"} | Status: ${f.status || "-"} | Substatus: ${f.substatus || "-"}`;
+      const row = rows[i];
+      line(
+        `FMS | PRO ${pad(row.pro,widths.pro)} | PU ${pad(row.pu,widths.pu)} -> DO ${pad(row.DO,widths.DO)} | Loc ${pad(row.fLoc,widths.fLoc)} | Status ${pad(row.fStatus,widths.fStatus)} | Substatus ${pad(row.fSub,widths.fSub)}`
+      );
     }
 
-    // =========================
-    // TMS DISPLAY LOGIC
-    // =========================
-
-    let tLine = "";
-
-    if(t.notFound){
-      if(currentMode === "pu"){
-        tLine = `TMS: ${searchValue} -> no TMS record found for this PU`;
-      } else {
-        tLine = `TMS: ${searchValue} -> no TMS record found for this PRO`;
-      }
+    if(!hasT){
+      line(`TMS: ${searchValue} -> no TMS record found for this ${currentMode.toUpperCase()}`);
     } else {
-      tLine = `TMS: PRO ${showPro} | PU ${showPu} -> Order ID: ${t.orderId || "-"} | Loc/SVCS: ${t.loc || "-"} | Status: ${t.status || "-"} | Substatus: ${t.substatus || "-"}`;
+      const row = rows[i];
+      line(
+        `TMS | PRO ${pad(row.pro,widths.pro)} | PU ${pad(row.pu,widths.pu)} -> OrderID ${pad(row.tOrder,widths.tOrder)} | Loc/SVCS ${pad(row.tLoc,widths.tLoc)} | Status ${pad(row.tStatus,widths.tStatus)} | Substatus ${pad(row.tSub,widths.tSub)}`
+      );
     }
 
-    // OUTPUT LINES
-    line(fLine);
-    line(tLine);
-
-    if(i < results.length - 1) line("---");
-
-    // CSV
-    csvRows.push({
-      PRO: showPro,
-      PU: showPu,
-      DO: f.DO || "-",
-      FMS_Loc: f.loc || "-",
-      FMS_Status: f.status || "-",
-      FMS_Substatus: f.substatus || "-",
-      Order_ID: t.orderId || "-",
-      TMS_Loc_SVCS: t.loc || "-",
-      TMS_Status: t.status || "-",
-      TMS_Substatus: t.substatus || "-"
-    });
-
-    setProg(i+1, results.length);
+    if(i < results.length-1) line("---");
   });
 
-  status.textContent = "Complete";
-  expBtn.disabled = !csvRows.length;
+  status.textContent="Complete";
 }
 
-
-// ========== EXPORT CSV ==========
-expBtn.addEventListener("click",()=>{
-  const headers = [
-    "PRO","PU","DO","FMS_Loc","FMS_Status","FMS_Substatus",
-    "Order_ID","TMS_Loc-SVCS","TMS_Status","TMS_Substatus"
-  ];
-
-  const lines = [
-    headers.join(","),
-    ...csvRows.map(r=>[
-      r.PRO,r.PU,r.DO,r.FMS_Loc,r.FMS_Status,r.FMS_Substatus,
-      r.Order_ID,r.TMS_Loc_SVCS,r.TMS_Status,r.TMS_Substatus
-    ].join(","))
-  ];
-
-  const blob = new Blob([lines.join("\n")],{type:"text/csv;charset=utf-8"});
-  const a=document.createElement("a");
-  a.href=URL.createObjectURL(blob);
-  a.download="pro-status-check.csv";
-  a.click();
-});
-
-
-// ========== RUN BTN ==========
-runBtn.addEventListener("click",async()=>{
+runBtn.addEventListener("click", async () => {
   resetOutput();
-  showSpinner();
-  startTimer();
-  await runLookup(input.value).finally(()=>{
-    hideSpinner();
-    stopTimer();
-  });
+  await runLookup(input.value);
 });
-
 </script>
 
 </body>
