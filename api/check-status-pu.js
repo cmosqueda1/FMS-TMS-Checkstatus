@@ -1,5 +1,5 @@
 // api/check-status-pu.js
-// FMS-only PU status check (no TMS yet)
+// FMS-only PU status check using DO-based flow (no TMS yet)
 
 // Helper: normalize PU
 const cleanPu = (v) => String(v ?? "").trim();
@@ -71,7 +71,8 @@ const FMS_SEARCH_URL  = `${FMS_BASE}/fms-platform-order/shipment-orders/query`;
 const FMS_ORDER_BASIC = `${FMS_BASE}/fms-platform-order/shipper/getshipment-orderbasic/`;
 const FMS_ORDER_HEAD  = `${FMS_BASE}/fms-platform-order/shipper/getshipment-orderbasic-headinfo/`;
 
-let FMS_TOKEN = null;
+let FMS_TOKEN  = null; // from data.token
+let FMS_AUTHZ  = null; // from data.third_party_token
 
 /* ========================
    MAIN FLOW (FMS only)
@@ -82,8 +83,8 @@ async function checkAll(pus) {
   }
 
   // 1) FMS: auth + search by PU + PU→DO mapping
-  const fmsToken   = await authFms();
-  const searchJson = await fmsSearchOrdersByPu(fmsToken, pus);
+  await authFms(); // sets FMS_TOKEN and FMS_AUTHZ
+  const searchJson = await fmsSearchOrdersByPu(pus);
   const fmsMap     = buildFmsMapByPu(searchJson);
 
   // 2) Build results with limited concurrency (same as PRO)
@@ -107,12 +108,12 @@ async function checkAll(pus) {
         generalError: false
       };
     } else {
-      fmsRes = await fetchFmsDetails(fmsToken, DO);
+      fmsRes = await fetchFmsDetails(DO);
       fmsRes.DO    = DO;
       fmsRes.hasDO = true;
     }
 
-    // For now, no TMS. Frontend does `const t = r.tms || {}`, so it's safe.
+    // For now, no TMS. Frontend treats missing r.tms as {}.
     return { pu, fms: fmsRes };
   });
 
@@ -123,7 +124,7 @@ async function checkAll(pus) {
    FMS HELPERS
 ======================== */
 async function authFms(force = false) {
-  if (FMS_TOKEN && !force) return FMS_TOKEN;
+  if (FMS_TOKEN && FMS_AUTHZ && !force) return { token: FMS_TOKEN, authz: FMS_AUTHZ };
 
   const r = await fetch(FMS_LOGIN_URL, {
     method: "POST",
@@ -131,25 +132,45 @@ async function authFms(force = false) {
       "fms-client": FMS_CLIENT,
       "Content-Type": "application/json"
     },
-    body: JSON.stringify({ account: FMS_USER, password: FMS_PASS })
+    body: JSON.stringify({
+      account: FMS_USER,
+      password: FMS_PASS
+    })
   });
 
   if (!r.ok) throw new Error(`FMS auth HTTP ${r.status}`);
   const j = await r.json().catch(() => ({}));
-  FMS_TOKEN = j.token || j?.data?.token || j?.result?.token || "";
-  if (!FMS_TOKEN) throw new Error("FMS auth: no token returned");
-  return FMS_TOKEN;
+
+  const data = j?.data || j;
+  const token = data?.token;
+  const thirdParty = data?.third_party_token;
+
+  if (!token || !thirdParty) {
+    throw new Error("FMS auth: missing token / third_party_token");
+  }
+
+  FMS_TOKEN = token;
+  FMS_AUTHZ = thirdParty;
+
+  return { token: FMS_TOKEN, authz: FMS_AUTHZ };
 }
 
-// Same shape as PRO, but now using pu_nos instead of tracking_nos
-async function fmsSearchOrdersByPu(token, pu_nos) {
+// Use EXACT header pattern from HAR, but dynamic body with pu_nos
+async function fmsSearchOrdersByPu(pu_nos) {
+  if (!FMS_AUTHZ || !FMS_TOKEN) {
+    throw new Error("FMS auth not initialized");
+  }
+
   const headers = {
+    "accept": "application/json, text/plain, */*",
+    "Content-Type": "application/json",
     "fms-client": FMS_CLIENT,
-    "fms-token": token,
-    "Company-Id": FMS_COMPANY_ID,
-    "Content-Type": "application/json"
+    "company-id": FMS_COMPANY_ID,
+    "authorization": FMS_AUTHZ,
+    "fms-token": FMS_TOKEN
   };
 
+  // Body structure copied from HAR, with pu_nos populated
   const body = {
     order_nos: [],
     tracking_nos: [],
@@ -166,10 +187,20 @@ async function fmsSearchOrdersByPu(token, pu_nos) {
     origin_states: [],
     origin_zip_codes: [],
     request_pickup_date: [],
+    pickup_appointment: [],
+    current_locations: [],
+    service_terminals: [],
+    lhs: [],
+    lh_etd_date: [],
+    lh_eta_date: [],
+    consignee_terminals: [],
+    consignee_state: [],
+    consignee_zip_codes: [],
+    desired_delivery_date: [],
     delivery_appointment: [],
     delivery_date: [],
     pickup_complete_date: [],
-    pu_nos,   // 🔹 KEY FIELD
+    pu_nos,        // 🔹 KEY FIELD (array of strings)
     po_nos: [],
     exception: false,
     delayed: false,
@@ -177,7 +208,7 @@ async function fmsSearchOrdersByPu(token, pu_nos) {
     business_client: "",
     record_status: "0",
     page_number: 1,
-    page_size: Math.min(pu_nos.length, 150)
+    page_size: 50   // match HAR exactly
   };
 
   const r = await fetch(FMS_SEARCH_URL, {
@@ -198,7 +229,7 @@ function buildFmsMapByPu(searchJson) {
   else if (Array.isArray(searchJson?.data?.items)) items = searchJson.data.items;
 
   for (const it of items) {
-    // Try to extract the PU from a few likely fields
+    // Try to extract the PU from likely fields
     const pu = cleanPu(
       it.pu_no ??
       it.puNo ??
@@ -209,7 +240,7 @@ function buildFmsMapByPu(searchJson) {
 
     const order = String(it.order_no ?? it.orderNo ?? "").trim();
 
-    // Same DO pattern as PRO logic
+    // Same DO pattern check as PRO logic
     if (pu && /^DO\d{6,}$/.test(order)) {
       map[pu] = order;
     }
@@ -218,12 +249,18 @@ function buildFmsMapByPu(searchJson) {
 }
 
 // Same DO-detail logic as PRO
-async function fetchFmsDetails(token, DO) {
+async function fetchFmsDetails(DO) {
+  if (!FMS_AUTHZ || !FMS_TOKEN) {
+    throw new Error("FMS auth not initialized");
+  }
+
   const headers = {
     "accept": "application/json, text/plain, */*",
+    "Content-Type": "application/json",
     "fms-client": FMS_CLIENT,
-    "fms-token": token,
-    "company-id": FMS_COMPANY_ID
+    "company-id": FMS_COMPANY_ID,
+    "authorization": FMS_AUTHZ,
+    "fms-token": FMS_TOKEN
   };
 
   let loc = null, statusDesc = null, subStatusDesc = null;
