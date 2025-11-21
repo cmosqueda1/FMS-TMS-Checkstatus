@@ -146,7 +146,7 @@ const input=$("input"), out=$("out"), status=$("status"), expBtn=$("export"), fi
 
 let timerStart=0, timerInterval=null, csvRows=[];
 
-const WIDTH = { pro:9, pu:9, DO:14, loc:12, status:18, sub:35 };
+const WIDTH = { pro:9, pu:9, DO:14, loc:16, status:18, sub:35 };
 
 function padVal(v,w){ v=String(v??"-"); return v.length>w?v.slice(0,w):v+" ".repeat(w-v.length);}
 function parseInput(t){ return (String(t).match(/\b\d{4,14}\b/g)||[]) }
